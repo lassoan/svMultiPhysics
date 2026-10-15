@@ -83,9 +83,25 @@ inline double getRandomDouble(const double min, const double max) {
     // Uncomment to use a random seed
     //unsigned int seed = std::chrono::system_clock::now().time_since_epoch().count();
     unsigned int seed = 42;
-    static std::default_random_engine engine(seed);
-    std::uniform_real_distribution<double> distribution(min, max);
-    return distribution(engine);
+    // std::default_random_engine and std::uniform_real_distribution are
+    // implementation-defined, so they produce different sequences with
+    // different standard libraries (e.g. libstdc++ vs. MSVC). Use an engine
+    // whose output is fully specified by the standard (minstd_rand0 is the
+    // libstdc++ default engine) and map it to [min, max) the same way
+    // libstdc++ does, to get identical values on all platforms.
+    static std::minstd_rand0 engine(seed);
+    const double r = static_cast<double>(engine.max() - engine.min()) + 1.0;
+    double sum = 0.0;
+    double scale = 1.0;
+    for (int k = 0; k < 2; k++) {  // 2 draws of ~31 bits for 53-bit precision
+        sum += static_cast<double>(engine() - engine.min()) * scale;
+        scale *= r;
+    }
+    double u = sum / scale;
+    if (u >= 1.0) {
+        u = std::nextafter(1.0, 0.0);
+    }
+    return u * (max - min) + min;
 }
 
 /**
