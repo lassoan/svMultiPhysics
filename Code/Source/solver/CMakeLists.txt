@@ -420,7 +420,7 @@ if(ENABLE_UNIT_TEST)
     run_all_unit_tests
     gtest
     GTest::gtest_main 
-    pthread   # link pthread on ubuntu20
+    Threads::Threads   # link pthread on ubuntu20
   )
 
   # Define the path to the unit-test reference-data directory as a preprocessor
