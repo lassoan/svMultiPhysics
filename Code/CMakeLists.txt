@@ -95,6 +95,10 @@ include(SimVascularExternals)
 
 #-----------------------------------------------------------------------------
 # ThirdParty
+if(WIN32)
+  # Prevent windows.h min/max macros from breaking std::min/std::max
+  add_compile_definitions(NOMINMAX)
+endif()
 include(SimVascularThirdParty)
 #-----------------------------------------------------------------------------
 
