@@ -51,6 +51,7 @@ if(SV_USE_MPI)
     if(WIN32)
       find_library(MPI_fmpich2_LIBRARY NAMES fmpich2 HINTS ${MPI_LIBRARY_DIR})
       set(MPI_EXTRA_LIBRARY ${MPI_EXTRA_LIBRARY} ${MPI_fmpich2_LIBRARY} ${MPI_CXX_LIBRARIES})
+      list(FILTER MPI_EXTRA_LIBRARY EXCLUDE REGEX "NOTFOUND$")
       #message("${MPI_EXTRA_LIBRARY}")
     endif()
 
