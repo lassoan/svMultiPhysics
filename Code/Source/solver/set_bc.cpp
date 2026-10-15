@@ -18,6 +18,7 @@
 #include "solid/ustruct.h"
 #include "utils.h"
 #include <cstdio>
+#include <filesystem>
 #include <math.h>
 
 namespace set_bc {
@@ -387,10 +388,13 @@ void genBC_Integ_X(ComMod& com_mod, const CmMod& cm_mod, const std::string& genF
   auto& cplBC = com_mod.cplBC;
   auto& cm = com_mod.cm;
 
-  int len = cplBC.binPath.size() + 1 + cplBC.commuName.size() + 1;
+  // Use the native path format: on Windows, the command interpreter does not
+  // accept '/' as a path separator in the command name.
+  std::string bin_path = std::filesystem::path(cplBC.binPath).make_preferred().string();
+  int len = bin_path.size() + 1 + cplBC.commuName.size() + 1;
   std::vector<char> command_buf(len);
   char* command = command_buf.data();
-  strcpy(command, cplBC.binPath.c_str());
+  strcpy(command, bin_path.c_str());
   strcat(command, " ");
   strcat(command, cplBC.commuName.c_str());
 
