@@ -145,6 +145,8 @@ double cput_()
       mach_port_deallocate(mach_task_self(), cclock);
       time.tv_sec = mts.tv_sec;
       time.tv_nsec = mts.tv_nsec;
+   #elif defined(_WIN32)  // MSVC does not have clock_gettime
+      timespec_get(&time, TIME_UTC);
    #else
       clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time);
    #endif
