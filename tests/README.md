@@ -52,6 +52,27 @@ You can run an individual test by navigating to the `./tests/cases/<physics>/<te
 
 For more options, simply call `pytest -h`.
 
+## Windows
+On Windows, svMultiPhysics is typically built in a different location (see [Building on Windows](../README.md#building_windows)) and MS-MPI provides `mpiexec` instead of `mpirun`. Set the following environment variables before running `pytest`:
+- `SVMP_EXECUTABLE` - full path of `svmultiphysics.exe` (by default, `build/svMultiPhysics-build/bin/svmultiphysics` is used)
+- `SVMP_MPIEXEC` - MPI launcher command, set it to `mpiexec` (by default, `mpirun` is used)
+
+The directories of the DLLs required by svMultiPhysics (OpenBLAS, VTK, MS-MPI) must be in the `PATH`. If VTK was built with `VTK_DEBUG_LEAKS` enabled (e.g. VTK in a Slicer build), also set `DASHBOARD_TEST_FROM_CTEST=1` to prevent VTK from showing a message box with memory leak reports when each simulation exits.
+
+The tests must be run from the `tests` directory. Tests that use genBC compile it using `make` and a Fortran compiler; exclude them if these are not available:
+```
+cd tests
+pip install pytest numpy pandas meshio
+set SVMP_EXECUTABLE=C:\path\to\svMultiPhysics-build\bin\Release\svmultiphysics.exe
+set SVMP_MPIEXEC=mpiexec
+pytest -k "not genBC"
+```
+
+Unit tests are built when CMake is run with `-DENABLE_UNIT_TEST=ON` and can be run using
+```
+C:\path\to\svMultiPhysics-build\bin\Release\run_all_unit_tests.exe
+```
+
 ## Code coverage
 We expect that new code is fully covered with at least one integration test. We also strive to increase our coverage of existing code. You can have a look at our current code coverage [with Codecov](https://codecov.io/github/SimVascular/svMultiPhysics). It analyzes every pull request and checks the change of coverage (ideally increasing) and if any non-covered lines have been modified. We avoid modifying untested lines of codeas there is no guarantee that the code will still do the same thing as before.
 

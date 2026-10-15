@@ -49,7 +49,7 @@ svMultiPhysics can be built on most Unix-like operating systems
 - Ubuntu
 - CentOS
 
-A native Windows build is currently not supported. However, svMultiPhysics can be built and run from an Ubuntu terminal environment on Windows using [Windows Subsystem for Linux (WSL)](https://ubuntu.com/desktop/wsl).
+svMultiPhysics can also be built natively on Windows using Microsoft Visual C++ (MSVC), see [Building on Windows](#building_windows). Alternatively, it can be built and run from an Ubuntu terminal environment on Windows using [Windows Subsystem for Linux (WSL)](https://ubuntu.com/desktop/wsl).
 
 ## Software Dependencies
 The following software packages are required to be installed in order to build svMultiPhysics
@@ -162,6 +162,37 @@ or do this using the CMake command-line argument:
 ```
 -DSV_LOCAL_VTK_PATH=/user/shared/vtk/install 
 ```
+
+<h2 id="building_windows"> Building on Windows </h2>
+
+svMultiPhysics can be built natively on Windows with Microsoft Visual C++ (MSVC). The following software is required
+- [Visual Studio 2022](https://visualstudio.microsoft.com/) with the *Desktop development with C++* workload
+- [CMake](https://cmake.org/) 3.20 or later
+- [git](https://git-scm.com/) and [Git LFS](https://git-lfs.com/) (needed for the test data)
+- [Microsoft MPI (MS-MPI)](https://learn.microsoft.com/en-us/message-passing-interface/microsoft-mpi): install both the SDK (`msmpisdk.msi`, which is also available in `Code/ThirdParty/msmpi/Installers`) and the runtime (`msmpisetup.exe`). The SDK installer sets the `MSMPI_INC` and `MSMPI_LIB64` environment variables that CMake uses to find MPI.
+- BLAS and LAPACK: for example, download a prebuilt `OpenBLAS-<version>-x64.zip` package from the [OpenBLAS releases](https://github.com/OpenMathLib/OpenBLAS/releases) page and extract it. It contains both BLAS and LAPACK, and an import library (`lib/libopenblas.lib`) that can be used with MSVC.
+- VTK: build it from source with the same compiler and build configuration (e.g. Release) that is used for svMultiPhysics, see [Building Visualization Toolkit (VTK) Libraries](#building_vtk).
+
+Configure and build svMultiPhysics from the `Code` directory of the source tree, in a *Developer Command Prompt for VS 2022*. Replace the paths with the locations of the VTK build and the OpenBLAS package
+```
+cmake -S svMultiPhysics/Code -B svMultiPhysics-build -G "Visual Studio 17 2022" -A x64 ^
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DSV_LOCAL_VTK_PATH=C:/path/to/VTK-build ^
+  -DBLAS_LIBRARIES=C:/path/to/OpenBLAS/lib/libopenblas.lib ^
+  -DLAPACK_LIBRARIES=C:/path/to/OpenBLAS/lib/libopenblas.lib
+cmake --build svMultiPhysics-build --config Release --parallel
+```
+This creates the **svmultiphysics.exe** executable located in
+```
+svMultiPhysics-build/bin/Release/svmultiphysics.exe
+```
+
+To run svMultiPhysics, the directories containing the OpenBLAS DLL (`OpenBLAS/bin`), the VTK DLLs (e.g. `VTK-build/bin/Release`) and any further libraries that VTK was built with must be in the `PATH` environment variable. The MS-MPI runtime installer adds `mpiexec` and the MS-MPI DLL to the `PATH`. A simulation is run in parallel using MS-MPI with
+```
+mpiexec -n 4 svmultiphysics.exe solver.xml
+```
+
+Add `-DENABLE_UNIT_TEST=ON` to the CMake command to also build the unit tests. See the [Testing Guide](tests/README.md#windows) for running tests on Windows.
 
 <!--- =================================================================================== -->
 <!---                      External Linear Algebra Packages                               -->
