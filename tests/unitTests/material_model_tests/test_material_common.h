@@ -31,6 +31,8 @@
 #ifndef TEST_MATERIAL_COMMON_H
 #define TEST_MATERIAL_COMMON_H
 
+#include <numeric>
+
 #include "../test_common.h"
 #include "solid/mat_models.h"
 
