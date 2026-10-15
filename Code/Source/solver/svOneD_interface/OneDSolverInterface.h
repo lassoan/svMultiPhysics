@@ -4,7 +4,7 @@
 #ifndef ONEDSOLVER_INTERFACE_H
 #define ONEDSOLVER_INTERFACE_H
 
-#include <dlfcn.h>
+#include "dlfcn_compat.h"
 #include <string>
 #include <stdexcept>
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include "LPNSolverInterface.h"
-#include <dlfcn.h>
+#include "dlfcn_compat.h"
 #include <iostream>
 #include <string>
 
