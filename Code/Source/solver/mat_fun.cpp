@@ -456,6 +456,8 @@ mat_inv_lp_eigen(const Array<double>& A, const int nd)
 
   return Ainv;
 
+#else
+  return Array<double>(nd,nd);
 #endif
 }
 
