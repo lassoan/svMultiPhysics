@@ -98,6 +98,12 @@ include(SimVascularExternals)
 if(WIN32)
   # Prevent windows.h min/max macros from breaking std::min/std::max
   add_compile_definitions(NOMINMAX)
+  # MSVC has no regex.h; GKlib (used by METIS/ParMETIS) bundles its own
+  add_compile_definitions(USE_GKREGEX)
+  if(MSVC)
+    # GKlib uses the GCC thread-local storage keyword
+    add_compile_definitions(__thread=__declspec\(thread\))
+  endif()
 endif()
 include(SimVascularThirdParty)
 #-----------------------------------------------------------------------------
