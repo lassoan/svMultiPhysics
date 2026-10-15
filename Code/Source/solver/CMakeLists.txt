@@ -356,6 +356,10 @@ if(ENABLE_UNIT_TEST)
           GIT_TAG v1.17.0
           DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   )
+  if(MSVC)
+    # Use the same C runtime library (/MD) as the rest of the project
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  endif()
   FetchContent_MakeAvailable(googletest)
 
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_STANDARD GREATER_EQUAL 20)
