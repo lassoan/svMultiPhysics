@@ -1,6 +1,5 @@
-from .conftest import run_with_reference, skip_if_no_trilinos
+from .conftest import run_with_reference, build_genbc, skip_if_no_trilinos
 import os
-import subprocess
 
 # Common folder for all tests in this file
 base_folder = "struct"
@@ -75,19 +74,8 @@ def test_LV_NeoHookean_passive(n_proc):
 def test_LV_NeoHookean_passive_genBC(n_proc):
     test_folder = "LV_NeoHookean_passive_genBC"
 
-    # Remove old genBC output
-    os.chdir(os.path.join("cases", base_folder, test_folder))
-    for name in ["AllData", "InitialData", "GenBC.int"]:
-        if os.path.isfile(name):
-            os.remove(name)
-
-    # Compile genBC
-    os.chdir("genBC_svMultiPhysics")
-    subprocess.run(["make", "clean"], check=True)
-    subprocess.run(["make"], check=True)
-
-    # Change back to original directory
-    os.chdir("../../../../")
+    # Remove old genBC output and build genBC
+    build_genbc(base_folder, test_folder, "genBC_svMultiPhysics")
 
     run_with_reference(base_folder, test_folder, fields, n_proc, t_max=3)
 

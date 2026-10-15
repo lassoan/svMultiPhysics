@@ -46,6 +46,8 @@ Documentation/html/
 # genBC files
 **/genBC/obj/
 **/genBC_svMultiPhysics/obj/
+**/genBC/build/
+**/genBC_svMultiPhysics/build/
 genBC.exe
 AllData
 GenBC.int

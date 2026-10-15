@@ -1,6 +1,5 @@
-from .conftest import run_with_reference, skip_if_no_petsc, skip_if_no_trilinos
+from .conftest import run_with_reference, build_genbc, skip_if_no_petsc, skip_if_no_trilinos
 import os
-import subprocess
 
 # Common folder for all tests in this file
 base_folder = "fluid"
@@ -46,19 +45,8 @@ def test_pipe_RCR_genBC(n_proc):
     test_folder = "pipe_RCR_genBC"
     t_max = 2
 
-    # Remove old genBC output
-    os.chdir(os.path.join("cases", base_folder, test_folder))
-    for name in ["AllData", "InitialData", "GenBC.int"]:
-        if os.path.isfile(name):
-            os.remove(name)
-
-    # Compile genBC
-    os.chdir("genBC")
-    subprocess.run(["make", "clean"], check=True)
-    subprocess.run(["make"], check=True)
-
-    # Change back to original directory
-    os.chdir("../../../..")
+    # Remove old genBC output and build genBC
+    build_genbc(base_folder, test_folder, "genBC")
 
     run_with_reference(base_folder, test_folder, fields, n_proc, t_max)
 

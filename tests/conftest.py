@@ -141,6 +141,34 @@ def n_proc(request):
     return request.param
 
 
+def build_genbc(base_folder, test_folder, genbc_folder):
+    """
+    Remove old genBC output of a test case and build its genBC executable
+    using CMake. The executable is created as genBC.exe in the genBC folder.
+    The CMake generator can be selected using the CMAKE_GENERATOR environment
+    variable (e.g. "MinGW Makefiles" on Windows).
+    Args:
+        base_folder: physics folder of the test case (e.g. "fluid")
+        test_folder: folder of the test case
+        genbc_folder: genBC source folder within the test case folder
+    """
+    case_dir = os.path.join(this_file_dir, "cases", base_folder, test_folder)
+    for name in ["AllData", "InitialData", "GenBC.int"]:
+        path = os.path.join(case_dir, name)
+        if os.path.isfile(path):
+            os.remove(path)
+
+    source_dir = os.path.join(case_dir, genbc_folder)
+    build_dir = os.path.join(source_dir, "build")
+    shutil.rmtree(build_dir, ignore_errors=True)
+    exe = os.path.join(source_dir, "genBC.exe")
+    if os.path.isfile(exe):
+        os.remove(exe)
+
+    subprocess.run(["cmake", "-S", source_dir, "-B", build_dir], check=True)
+    subprocess.run(["cmake", "--build", build_dir], check=True)
+
+
 def run_by_name(folder, name, t_max, n_proc=1):
     """
     Run a test case and return results
