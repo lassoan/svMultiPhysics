@@ -12,6 +12,9 @@ import meshio
 this_file_dir = os.path.abspath(os.path.dirname(__file__))
 cpp_exec = os.path.join(this_file_dir, "..", "build", "svMultiPhysics-build", "bin", "svmultiphysics")
 cpp_exec_p = os.path.join(this_file_dir, "..", "build-petsc", "svMultiPhysics-build", "bin", "svmultiphysics")
+# Allow overriding the executable and MPI launcher (e.g. on Windows with MS-MPI)
+cpp_exec = os.environ.get("SVMP_EXECUTABLE", cpp_exec)
+mpi_launcher = os.environ.get("SVMP_MPIEXEC", "mpirun")
 
 
 def read_cmake_cache_variable(cache_path, key):
@@ -63,7 +66,7 @@ def _detect_oversubscribe_flag():
     """
     try:
         proc = subprocess.run(
-            ["mpirun", "--version"], capture_output=True, text=True, check=False
+            [mpi_launcher, "--version"], capture_output=True, text=True, check=False
         )
         version = (proc.stdout or "") + (proc.stderr or "")
     except FileNotFoundError:
@@ -160,7 +163,7 @@ def run_by_name(folder, name, t_max, n_proc=1):
     exe = cpp_exec_p if "petsc" in folder else cpp_exec
     cmd = " ".join(
         [
-            "mpirun",
+            mpi_launcher,
             OVERSUBSCRIBE_FLAG if n_proc > 1 else "",
             "-np",
             str(n_proc),
