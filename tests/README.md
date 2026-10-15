@@ -52,6 +52,11 @@ You can run an individual test by navigating to the `./tests/cases/<physics>/<te
 
 For more options, simply call `pytest -h`.
 
+Tests that use genBC build it with CMake before running the simulation, which requires a Fortran compiler (e.g. `gfortran`). The CMake generator and the Fortran compiler can be selected using the `CMAKE_GENERATOR` and `FC` environment variables. Exclude these tests if no Fortran compiler is available:
+```
+pytest -k "not genBC"
+```
+
 ## Windows
 On Windows, svMultiPhysics is typically built in a different location (see [Building on Windows](../README.md#building_windows)) and MS-MPI provides `mpiexec` instead of `mpirun`. Set the following environment variables before running `pytest`:
 - `SVMP_EXECUTABLE` - full path of `svmultiphysics.exe` (by default, `build/svMultiPhysics-build/bin/svmultiphysics` is used)
@@ -59,14 +64,24 @@ On Windows, svMultiPhysics is typically built in a different location (see [Buil
 
 The directories of the DLLs required by svMultiPhysics (OpenBLAS, VTK, MS-MPI) must be in the `PATH`. If VTK was built with `VTK_DEBUG_LEAKS` enabled (e.g. VTK in a Slicer build), also set `DASHBOARD_TEST_FROM_CTEST=1` to prevent VTK from showing a message box with memory leak reports when each simulation exits.
 
-The tests must be run from the `tests` directory. Tests that use genBC compile it using `make` and a Fortran compiler; exclude them if these are not available:
+The tests must be run from the `tests` directory, in a *Developer Command Prompt for VS 2022*:
 ```
 cd tests
 pip install pytest numpy pandas meshio
 set SVMP_EXECUTABLE=C:\path\to\svMultiPhysics-build\bin\Release\svmultiphysics.exe
 set SVMP_MPIEXEC=mpiexec
-pytest -k "not genBC"
+pytest
 ```
+
+To build genBC, [LLVM Flang](https://flang.llvm.org/) can be used with the *NMake Makefiles* CMake generator (NMake is included in Visual Studio):
+```
+set PATH=C:\path\to\flang\Library\bin;%PATH%
+set FC=flang
+set CMAKE_GENERATOR=NMake Makefiles
+```
+LLVM Flang for Windows is available from conda-forge. It has been tested with version 20.1.8 of the `flang`, `libflang` (Fortran runtime), `compiler-rt_win-64`, `libzlib` and `zstd` packages, extracted into the same directory. The `clang_rt.builtins-x86_64.lib` library from `compiler-rt_win-64` must be copied as `clang_rt.builtins.lib` into the `Library/lib` directory. Version 23.1.3 of the conda-forge `flang` package does not include the Fortran intrinsic module files (e.g. `ieee_arithmetic.mod`) that genBC needs.
+
+Tests that are coupled to svZeroDSolver (`sv0D` in their name) currently cannot run on Windows, because svMultiPhysics only looks for the svZeroDSolver interface library with `.so` or `.dylib` extensions. Exclude them using `pytest -k "not sv0D"`.
 
 Unit tests are built when CMake is run with `-DENABLE_UNIT_TEST=ON` and can be run using
 ```
