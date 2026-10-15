@@ -396,7 +396,9 @@ void calc_svZeroD(ComMod& com_mod, const CmMod& cm_mod, char BCFlag)
   const int nCoupledBc = cplBC.nSvZeroD_coupled_bc;
 
   if (cm.mas(cm_mod)) {
-    double QCoupled[numCoupledSrfs], QnCoupled[numCoupledSrfs], PCoupled[numCoupledSrfs], PnCoupled[numCoupledSrfs];
+    std::vector<double> QCoupled_buf(numCoupledSrfs), QnCoupled_buf(numCoupledSrfs), PCoupled_buf(numCoupledSrfs), PnCoupled_buf(numCoupledSrfs);
+    double* QCoupled = QCoupled_buf.data(); double* QnCoupled = QnCoupled_buf.data();
+    double* PCoupled = PCoupled_buf.data(); double* PnCoupled = PnCoupled_buf.data();
     double params[2];
     double times[2];
     int error_code;
