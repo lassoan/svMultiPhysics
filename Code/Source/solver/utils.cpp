@@ -8,11 +8,18 @@
 #include <cmath> 
 #include <limits>
 
-#include <unistd.h>
 #include <ios>
 #include <iostream>
 #include <fstream>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+#else
+#include <unistd.h>
 #include <sys/resource.h>
+#endif
 
 #include "FE/Common/FEException.h"
 
@@ -161,11 +168,17 @@ bool is_zero(double value1, double value2)
 
 double mem_usage(const bool print_usage, const std::string& prefix) 
 {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS pmc{};
+  GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+  double resident_set = static_cast<double>(pmc.PeakWorkingSetSize);
+#else
   int who = RUSAGE_SELF;
   struct rusage usage;
   int ret;
   ret = getrusage(who, &usage);
   double resident_set = usage.ru_maxrss; 
+#endif
 
   std::string pr_prefix = "[cpp] ";
   if (prefix != "") {
