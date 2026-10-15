@@ -429,6 +429,11 @@ if(ENABLE_UNIT_TEST)
     UNIT_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/unitTests/reference_data"
   )
 
+  if(WIN32)
+    # Same as simvascular_add_executable() does for the main executable
+    target_compile_definitions(run_all_unit_tests PRIVATE WIN32_LEAN_AND_MEAN)
+  endif()
+
   # gtest_discover_tests(runUnitTest)
   add_test(NAME all_unit_tests COMMAND run_all_unit_tests)
 
