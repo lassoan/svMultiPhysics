@@ -21,6 +21,10 @@ using MpiCommWorldType = MPI_Comm;
 //using MpiCommWorldType = decltype(MPI_COMM_WORLD);
 
 // Set MPI data type names.
+#ifndef MPI_CXX_BOOL
+// MS-MPI does not define MPI_CXX_BOOL; MPI_C_BOOL has the same size as bool.
+#define MPI_CXX_BOOL MPI_C_BOOL
+#endif
 const decltype(MPI_CXX_BOOL) mplog = MPI_CXX_BOOL;
 //const decltype(MPI_LOGICAL) mplog  = MPI_LOGICAL;
 const decltype(MPI_INTEGER) mpint = MPI_INTEGER;
