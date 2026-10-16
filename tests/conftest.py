@@ -14,6 +14,7 @@ cpp_exec = os.path.join(this_file_dir, "..", "build", "svMultiPhysics-build", "b
 cpp_exec_p = os.path.join(this_file_dir, "..", "build-petsc", "svMultiPhysics-build", "bin", "svmultiphysics")
 # Allow overriding the executable and MPI launcher (e.g. on Windows with MS-MPI)
 cpp_exec = os.environ.get("SVMP_EXECUTABLE", cpp_exec)
+cpp_exec_p = os.environ.get("SVMP_EXECUTABLE_PETSC", cpp_exec_p)
 mpi_launcher = os.environ.get("SVMP_MPIEXEC", "mpirun")
 
 
@@ -33,7 +34,14 @@ def read_cmake_cache_variable(cache_path, key):
 
 def cmake_cache_path_for(exe_path):
     """CMakeCache.txt of the build that produced `exe_path`, which lives at
-    <build>/svMultiPhysics-build/bin/svmultiphysics."""
+    <build>/svMultiPhysics-build/bin/svmultiphysics (or in a subdirectory of
+    bin, e.g. bin/Release with multi-configuration generators)."""
+    build_dir = os.path.dirname(os.path.dirname(exe_path))
+    for _ in range(3):
+        cache_path = os.path.join(build_dir, "CMakeCache.txt")
+        if os.path.isfile(cache_path):
+            return cache_path
+        build_dir = os.path.dirname(build_dir)
     return os.path.join(os.path.dirname(os.path.dirname(exe_path)), "CMakeCache.txt")
 
 
