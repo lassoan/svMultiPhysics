@@ -89,6 +89,9 @@ ExternalProject_Add(${proj}
     -DTrilinos_ENABLE_NOX:BOOL=ON
     -DTrilinos_ENABLE_ThyraCore:BOOL=ON
     -DTrilinos_ENABLE_ThyraTpetraAdapters:BOOL=ON
+    -DNOX_ENABLE_ThyraCore:BOOL=ON
+    -DNOX_ENABLE_ThyraTpetraAdapters:BOOL=ON
+    -DNOX_ENABLE_THYRA_TPETRA_ADAPTERS:BOOL=ON
     -DXpetra_ENABLE_Kokkos_compat:BOOL=ON
     -DMueLu_ENABLE_EXPLICIT_INSTANTIATION:BOOL=ON
     -DKokkos_ENABLE_SERIAL:BOOL=ON
