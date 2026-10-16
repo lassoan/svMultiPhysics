@@ -3,9 +3,14 @@
 set(proj VTK)
 
 set(_system_libs ON)
+set(_args)
 if(WIN32)
   # Use the copies of expat and zlib that come with VTK
   set(_system_libs OFF)
+  # The static libraries of VTK 9.3 built with MSVC lack symbols of the
+  # STDThread SMP backend (vtkSMPToolsImpl<STDThread>::IsParallelScope), so
+  # only the Sequential backend is built (svMultiPhysics does not use VTK SMP).
+  list(APPEND _args -DVTK_SMP_ENABLE_STDTHREAD:BOOL=OFF -DVTK_SMP_IMPLEMENTATION_TYPE:STRING=Sequential)
 endif()
 
 ExternalProject_Add(${proj}
@@ -38,4 +43,5 @@ ExternalProject_Add(${proj}
     -DVTK_GROUP_ENABLE_Imaging:STRING=NO
     -DVTK_GROUP_ENABLE_Qt:STRING=DONT_WANT
     -DVTK_GROUP_ENABLE_Rendering:STRING=DONT_WANT
+    ${_args}
   )

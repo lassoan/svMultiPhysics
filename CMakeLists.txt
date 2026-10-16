@@ -107,6 +107,9 @@ set(SV_EXTERNALS_APPLE_CMAKE_ARGS)
 ExternalProject_Add(Externals
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Externals
   BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/Externals-build
+  # Always run the build step, so that changes are built (the dependencies
+  # themselves are only rebuilt when needed)
+  BUILD_ALWAYS TRUE
   DOWNLOAD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
@@ -215,6 +218,7 @@ endif()
 ExternalProject_Add(svMultiPhysics
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Code
   BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/svMultiPhysics-build
+  BUILD_ALWAYS TRUE
   DEPENDS Externals
   DOWNLOAD_COMMAND ""
   UPDATE_COMMAND ""
@@ -231,6 +235,7 @@ if(SV_EXTERNALS_ENABLE_PETSc)
   ExternalProject_Add(svMultiPhysics-petsc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Code
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/svMultiPhysics-petsc-build
+    BUILD_ALWAYS TRUE
     DEPENDS Externals
     DOWNLOAD_COMMAND ""
     UPDATE_COMMAND ""

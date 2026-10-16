@@ -8,7 +8,11 @@ set(_patch "")
 set(_args)
 if(MSVC)
   # Fixes for MSVC (template definitions and gettimeofday)
-  set(_patch ${GIT_EXECUTABLE} apply --whitespace=nowarn ${SV_EXTERNALS_PATCH_DIR}/trilinos-16.2.2-msvc.patch)
+  # Copyright.txt is a symbolic link to COPYRIGHT in the source package, which
+  # is not created when extracting on Windows. TriBITS only generates
+  # Trilinos_version.h if Copyright.txt exists.
+  set(_patch ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/COPYRIGHT <SOURCE_DIR>/Copyright.txt
+    COMMAND ${GIT_EXECUTABLE} apply --whitespace=nowarn ${SV_EXTERNALS_PATCH_DIR}/trilinos-16.2.2-msvc.patch)
   list(APPEND _args "-DCMAKE_CXX_FLAGS:STRING=/EHsc /bigobj /permissive- /DNOMINMAX")
 endif()
 
@@ -57,8 +61,15 @@ if(WIN32)
   endif()
 endif()
 
+# Short source and build directories in the top-level build directory: some
+# generated Kokkos source files have long paths, which can exceed the 260
+# character path limit of the MSVC tools in a deep build directory.
+get_filename_component(_top_build_dir "${SV_EXTERNALS_INSTALL_DIR}" DIRECTORY)
+
 ExternalProject_Add(${proj}
   PREFIX ${SV_EXTERNALS_TOPLEVEL_BLD_DIR}/${proj}
+  SOURCE_DIR ${_top_build_dir}/ts
+  BINARY_DIR ${_top_build_dir}/tb
   URL ${SV_EXTERNALS_Trilinos_URL}
   URL_HASH SHA256=${SV_EXTERNALS_Trilinos_SHA256}
   DOWNLOAD_DIR ${SV_EXTERNALS_DOWNLOAD_DIR}
@@ -99,6 +110,7 @@ ExternalProject_Add(${proj}
     -DTpetra_INST_DOUBLE:BOOL=ON
     -DTpetra_INST_INT_INT:BOOL=ON
     -DTPL_ENABLE_MPI:BOOL=ON
+    -DTPL_ENABLE_DLlib:BOOL=OFF
     -DTPL_ENABLE_BLAS:BOOL=ON
     -DTPL_ENABLE_LAPACK:BOOL=ON
     -DTPL_ENABLE_Boost:BOOL=${SV_EXTERNALS_ENABLE_Boost}

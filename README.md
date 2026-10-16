@@ -234,7 +234,7 @@ cmake ../svMultiPhysics -DSV_EXTERNALS_ENABLE_OpenBLAS=ON -DSV_EXTERNALS_ENABLE_
 make
 ```
 
-On Windows, run the superbuild from an *x64 Native Tools Command Prompt for VS 2022* (some dependencies are built with the NMake generator, which needs the compiler environment). Python 3 must be available, as it is used by the Trilinos configuration. To build all dependencies:
+On Windows, use a short build directory path (e.g. `C:\sv\build`, at most about 40 characters), because some files of the Trilinos build have long paths, and run the superbuild from an *x64 Native Tools Command Prompt for VS 2022* (some dependencies are built with the NMake generator, which needs the compiler environment). Python 3 must be available, as it is used by the Trilinos configuration. To build all dependencies:
 ```
 mkdir build
 cd build
