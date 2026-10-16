@@ -276,11 +276,8 @@ macro(simvascular_add_executable TARGET_NAME)
     set(_app_compile_flags "${_app_compile_flags} -DPOCO_NO_UNWINDOWS -DWIN32_LEAN_AND_MEAN")
   endif()
 
-  if(WIN32)
-    add_executable(${TARGET_NAME} WIN32 ${simvascular_add_executable_SRCS} ${WINDOWS_ICON_RESOURCE_FILE})
-  else()
-    add_executable(${TARGET_NAME} ${simvascular_add_executable_SRCS} ${WINDOWS_ICON_RESOURCE_FILE})
-  endif()
+  # Console application (no WIN32 option: that would require a WinMain function)
+  add_executable(${TARGET_NAME} ${simvascular_add_executable_SRCS} ${WINDOWS_ICON_RESOURCE_FILE})
 
   set_target_properties(${TARGET_NAME} PROPERTIES
     COMPILE_FLAGS "${_app_compile_flags}")
