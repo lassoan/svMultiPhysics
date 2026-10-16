@@ -7,3 +7,7 @@
 *.bin filter=lfs diff=lfs merge=lfs -text
 *.stl filter=lfs diff=lfs merge=lfs -text
 *.avi filter=lfs diff=lfs merge=lfs -text
+# Keep the line endings of the superbuild patches and of the Cygwin script template
+Externals/Patches/*.patch -text
+Externals/CMakeExternals/flang-cygwin.in text eol=lf
+Externals/CMakeExternals/petsc-windows.sh.in text eol=lf

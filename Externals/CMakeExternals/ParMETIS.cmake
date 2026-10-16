@@ -1,0 +1,28 @@
+# ParMETIS (PETSc fork, the version that PETSc downloads), built with the
+# options that PETSc uses
+set(proj ParMETIS)
+
+sv_externals_enabled_depends(_deps MSMPI METIS)
+
+set(_args)
+if(MSVC)
+  list(APPEND _args -DMSVC:BOOL=1)
+endif()
+if(WIN32 AND SV_EXTERNALS_ENABLE_MSMPI)
+  list(APPEND _args -DMPI_INCLUDE_PATH:PATH=${SV_EXTERNALS_MSMPI_SDK_DIR}/Include)
+endif()
+
+ExternalProject_Add(${proj}
+  PREFIX ${SV_EXTERNALS_TOPLEVEL_BLD_DIR}/${proj}
+  URL ${SV_EXTERNALS_ParMETIS_URL}
+  URL_HASH SHA256=${SV_EXTERNALS_ParMETIS_SHA256}
+  DOWNLOAD_DIR ${SV_EXTERNALS_DOWNLOAD_DIR}
+  CMAKE_COMMAND ${SV_EXTERNALS_CMAKE_COMMAND}
+  CMAKE_CACHE_ARGS
+    ${SV_EXTERNALS_COMMON_CMAKE_CACHE_ARGS}
+    -DCMAKE_INSTALL_PREFIX:PATH=${SV_EXTERNALS_ParMETIS_INSTALL_DIR}
+    -DGKLIB_PATH:PATH=<SOURCE_DIR>/headers
+    -DMETIS_PATH:PATH=${SV_EXTERNALS_METIS_INSTALL_DIR}
+    ${_args}
+  DEPENDS ${_deps}
+  )

@@ -1,0 +1,485 @@
+diff --git a/packages/amesos2/src/Amesos2_KokkosMultiVecAdapter_def.hpp b/packages/amesos2/src/Amesos2_KokkosMultiVecAdapter_def.hpp
+index 9c9d2a54..41bc16b9 100644
+--- a/packages/amesos2/src/Amesos2_KokkosMultiVecAdapter_def.hpp
++++ b/packages/amesos2/src/Amesos2_KokkosMultiVecAdapter_def.hpp
+@@ -57,7 +57,7 @@ namespace Amesos2 {
+     size_t lda,
+     Teuchos::Ptr<
+       const Tpetra::Map<local_ordinal_t, global_ordinal_t,
+-                      MultiVecAdapter<Kokkos::View<Scalar**, Kokkos::LayoutLeft, ExecutionSpace>>::node_t>> distribution_map,
++                      typename MultiVecAdapter<Kokkos::View<Scalar**, Kokkos::LayoutLeft, ExecutionSpace>>::node_t>> distribution_map,
+                       EDistribution distribution) const
+   {
+     TEUCHOS_TEST_FOR_EXCEPTION(true, std::logic_error, "get1dCopy for kokkos not implemented.");
+@@ -81,7 +81,7 @@ namespace Amesos2 {
+       size_t lda,
+       Teuchos::Ptr<
+         const Tpetra::Map<local_ordinal_t, global_ordinal_t,
+-                      MultiVecAdapter<Kokkos::View<Scalar**, Kokkos::LayoutLeft, ExecutionSpace>>::node_t> > source_map,
++                      typename MultiVecAdapter<Kokkos::View<Scalar**, Kokkos::LayoutLeft, ExecutionSpace>>::node_t> > source_map,
+                       EDistribution /* distribution */) const
+   {
+     TEUCHOS_TEST_FOR_EXCEPTION(
+diff --git a/packages/xpetra/src/BlockedCrsMatrix/Xpetra_BlockedCrsMatrix_def.hpp b/packages/xpetra/src/BlockedCrsMatrix/Xpetra_BlockedCrsMatrix_def.hpp
+index 7f7ec177..6729cf2c 100644
+--- a/packages/xpetra/src/BlockedCrsMatrix/Xpetra_BlockedCrsMatrix_def.hpp
++++ b/packages/xpetra/src/BlockedCrsMatrix/Xpetra_BlockedCrsMatrix_def.hpp
+@@ -1253,9 +1253,9 @@ typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_mat
+ 
+ template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
+ #if KOKKOS_VERSION >= 40799
+-typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type::host_mirror_type BlockedCrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::getLocalMatrixHost() const {
++typename BlockedCrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type::host_mirror_type BlockedCrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::getLocalMatrixHost() const {
+ #else
+-typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type::HostMirror BlockedCrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::getLocalMatrixHost() const {
++typename BlockedCrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type::HostMirror BlockedCrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::getLocalMatrixHost() const {
+ #endif
+   if (Rows() == 1 && Cols() == 1) {
+     return getMatrix(0, 0)->getLocalMatrixHost();
+diff --git a/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybrid2GL.hpp b/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybrid2GL.hpp
+index 08ddd372..e82d1e97 100644
+--- a/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybrid2GL.hpp
++++ b/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybrid2GL.hpp
+@@ -10,6 +10,7 @@
+ #ifndef _ZOLTAN2_2GHOSTLAYER_HPP_
+ #define _ZOLTAN2_2GHOSTLAYER_HPP_
+ 
++#include <chrono>
+ #include <vector>
+ #include <unordered_map>
+ #include <iostream>
+@@ -66,9 +67,7 @@ class AlgTwoGhostLayer : public Algorithm<Adapter> {
+     using host_mem = typename femv_t::host_view_type::device_type::memory_space;
+ 
+     double timer(){
+-      struct timeval tp;
+-      gettimeofday(&tp, NULL);
+-      return ((double) (tp.tv_sec) + 1e-6 * tp.tv_usec);
++      return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+     }
+   private:
+ 
+diff --git a/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybridD1.hpp b/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybridD1.hpp
+index 640deac9..a343264c 100644
+--- a/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybridD1.hpp
++++ b/packages/zoltan2/core/src/algorithms/color/Zoltan2_AlgHybridD1.hpp
+@@ -10,6 +10,7 @@
+ #ifndef _ZOLTAN2_ALGHYBRIDD1_HPP_
+ #define _ZOLTAN2_ALGHYBRIDD1_HPP_
+ 
++#include <chrono>
+ #include <vector>
+ #include <unordered_map>
+ #include <iostream>
+@@ -65,9 +66,7 @@ class AlgDistance1 : public Algorithm<Adapter>
+     using host_exec = typename femv_t::host_view_type::device_type::execution_space;
+     using host_mem = typename femv_t::host_view_type::device_type::memory_space;
+     double timer() {
+-      struct timeval tp;
+-      gettimeofday(&tp, NULL);
+-      return ((double) (tp.tv_sec) + 1e-6 * tp.tv_usec);
++      return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+     }
+     
+   private:
+diff --git a/packages/zoltan2/core/src/input/Zoltan2_TpetraRowGraphAdapter.hpp b/packages/zoltan2/core/src/input/Zoltan2_TpetraRowGraphAdapter.hpp
+index 1b33eb07..78e80cf3 100644
+--- a/packages/zoltan2/core/src/input/Zoltan2_TpetraRowGraphAdapter.hpp
++++ b/packages/zoltan2/core/src/input/Zoltan2_TpetraRowGraphAdapter.hpp
+@@ -96,7 +96,7 @@ public:
+    *  The order of the weights should match the order that
+    *  entities appear in the input data structure.
+    */
+-  void setWeightsDevice(typename Base::ConstWeightsDeviceView1D val, int idx);
++  void setWeightsDevice(typename GraphAdapter<User, UserCoord>::ConstWeightsDeviceView1D val, int idx);
+ 
+   /*! \brief Provide a host view of weights for the primary entity type.
+    *    \param val A view to the weights for index \c idx.
+@@ -106,7 +106,7 @@ public:
+    *  The order of the weights should match the order that
+    *  entities appear in the input data structure.
+    */
+-  void setWeightsHost(typename Base::ConstWeightsHostView1D val, int idx);
++  void setWeightsHost(typename GraphAdapter<User, UserCoord>::ConstWeightsHostView1D val, int idx);
+ 
+   /*! \brief Provide a pointer to vertex weights.
+    *    \param val A pointer to the weights for index \c idx.
+@@ -136,7 +136,7 @@ public:
+    *       TheGraph->getRowMap()->getLocalElementList()
+    *     \endcode
+    */
+-  void setVertexWeightsDevice(typename Base::ConstWeightsDeviceView1D val,
++  void setVertexWeightsDevice(typename GraphAdapter<User, UserCoord>::ConstWeightsDeviceView1D val,
+                               int idx);
+ 
+   /*! \brief Provide a host view to vertex weights.
+@@ -150,7 +150,7 @@ public:
+    *       TheGraph->getRowMap()->getLocalElementList()
+    *     \endcode
+    */
+-  void setVertexWeightsHost(typename Base::ConstWeightsHostView1D val, int idx);
++  void setVertexWeightsHost(typename GraphAdapter<User, UserCoord>::ConstWeightsHostView1D val, int idx);
+ 
+   /*! \brief Specify an index for which the weight should be
+               the degree of the entity
+@@ -195,7 +195,7 @@ public:
+    *  \param idx A number from 0 to one less than the number
+    *             of edge weights specified in the constructor.
+    */
+-  void setEdgeWeightsDevice(typename Base::ConstWeightsDeviceView1D val,
++  void setEdgeWeightsDevice(typename GraphAdapter<User, UserCoord>::ConstWeightsDeviceView1D val,
+                             int idx);
+ 
+   /*! \brief Provide a host view to edge weights.
+@@ -203,7 +203,7 @@ public:
+    *  \param idx A number from 0 to one less than the
+    *             number of edge weights specified in the constructor.
+    */
+-  void setEdgeWeightsHost(typename Base::ConstWeightsHostView1D val, int idx);
++  void setEdgeWeightsHost(typename GraphAdapter<User, UserCoord>::ConstWeightsHostView1D val, int idx);
+ 
+   ////////////////////////////////////////////////////
+   // The GraphAdapter interface.
+@@ -216,10 +216,10 @@ public:
+   void getVertexIDsView(const gno_t *&ids) const override;
+ 
+   void
+-  getVertexIDsDeviceView(typename Base::ConstIdsDeviceView &ids) const override;
++  getVertexIDsDeviceView(typename GraphAdapter<User, UserCoord>::ConstIdsDeviceView &ids) const override;
+ 
+   void
+-  getVertexIDsHostView(typename Base::ConstIdsHostView &ids) const override;
++  getVertexIDsHostView(typename GraphAdapter<User, UserCoord>::ConstIdsHostView &ids) const override;
+ 
+   size_t getLocalNumEdges() const override;
+ 
+@@ -227,28 +227,28 @@ public:
+                     const gno_t *&adjIds) const override;
+ 
+   void
+-  getEdgesDeviceView(typename Base::ConstOffsetsDeviceView &offsets,
+-                     typename Base::ConstIdsDeviceView &adjIds) const override;
++  getEdgesDeviceView(typename GraphAdapter<User, UserCoord>::ConstOffsetsDeviceView &offsets,
++                     typename GraphAdapter<User, UserCoord>::ConstIdsDeviceView &adjIds) const override;
+ 
+-  void getEdgesHostView(typename Base::ConstOffsetsHostView &offsets,
+-                        typename Base::ConstIdsHostView &adjIds) const override;
++  void getEdgesHostView(typename GraphAdapter<User, UserCoord>::ConstOffsetsHostView &offsets,
++                        typename GraphAdapter<User, UserCoord>::ConstIdsHostView &adjIds) const override;
+ 
+   int getNumWeightsPerVertex() const override;
+ 
+   void getVertexWeightsView(const scalar_t *&weights, int &stride,
+                             int idx) const override;
+ 
+-  void getVertexWeightsDeviceView(typename Base::WeightsDeviceView1D &weights,
++  void getVertexWeightsDeviceView(typename GraphAdapter<User, UserCoord>::WeightsDeviceView1D &weights,
+                                   int idx = 0) const override;
+ 
+   void getVertexWeightsDeviceView(
+-      typename Base::WeightsDeviceView &weights) const override;
++      typename GraphAdapter<User, UserCoord>::WeightsDeviceView &weights) const override;
+ 
+-  void getVertexWeightsHostView(typename Base::WeightsHostView1D &weights,
++  void getVertexWeightsHostView(typename GraphAdapter<User, UserCoord>::WeightsHostView1D &weights,
+                                 int idx = 0) const override;
+ 
+   void getVertexWeightsHostView(
+-      typename Base::WeightsHostView &weights) const override;
++      typename GraphAdapter<User, UserCoord>::WeightsHostView &weights) const override;
+ 
+   bool useDegreeAsVertexWeight(int idx) const override;
+ 
+@@ -257,17 +257,17 @@ public:
+   void getEdgeWeightsView(const scalar_t *&weights, int &stride,
+                           int idx) const override;
+ 
+-  void getEdgeWeightsDeviceView(typename Base::WeightsDeviceView1D &weights,
++  void getEdgeWeightsDeviceView(typename GraphAdapter<User, UserCoord>::WeightsDeviceView1D &weights,
+                                 int idx = 0) const override;
+ 
+   void getEdgeWeightsDeviceView(
+-      typename Base::WeightsDeviceView &weights) const override;
++      typename GraphAdapter<User, UserCoord>::WeightsDeviceView &weights) const override;
+ 
+-  void getEdgeWeightsHostView(typename Base::WeightsHostView1D &weights,
++  void getEdgeWeightsHostView(typename GraphAdapter<User, UserCoord>::WeightsHostView1D &weights,
+                               int idx = 0) const override;
+ 
+   void getEdgeWeightsHostView(
+-      typename Base::WeightsHostView &weights) const override;
++      typename GraphAdapter<User, UserCoord>::WeightsHostView &weights) const override;
+ 
+   template <typename Adapter>
+   void applyPartitioningSolution(
+@@ -288,20 +288,20 @@ protected:
+ 
+   RCP<const User> graph_;
+ 
+-  typename Base::ConstOffsetsHostView offsHost_;
+-  typename Base::ConstIdsHostView adjIdsHost_;
++  typename GraphAdapter<User, UserCoord>::ConstOffsetsHostView offsHost_;
++  typename GraphAdapter<User, UserCoord>::ConstIdsHostView adjIdsHost_;
+ 
+-  typename Base::ConstIdsDeviceView adjIdsDevice_;
+-  typename Base::ConstOffsetsDeviceView offsDevice_;
++  typename GraphAdapter<User, UserCoord>::ConstIdsDeviceView adjIdsDevice_;
++  typename GraphAdapter<User, UserCoord>::ConstOffsetsDeviceView offsDevice_;
+ 
+   int nWeightsPerVertex_;
+   ArrayRCP<StridedData<lno_t, scalar_t>> vertexWeights_;
+-  typename Base::WeightsDeviceView vertexWeightsDevice_;
+-  typename Base::VtxDegreeHostView vertexDegreeWeightsHost_;
++  typename GraphAdapter<User, UserCoord>::WeightsDeviceView vertexWeightsDevice_;
++  typename GraphAdapter<User, UserCoord>::VtxDegreeHostView vertexDegreeWeightsHost_;
+ 
+   int nWeightsPerEdge_;
+   ArrayRCP<StridedData<lno_t, scalar_t>> edgeWeights_;
+-  typename Base::WeightsDeviceView edgeWeightsDevice_;
++  typename GraphAdapter<User, UserCoord>::WeightsDeviceView edgeWeightsDevice_;
+ 
+   virtual RCP<User> doMigration(const User &from, size_t numLocalRows,
+                                 const gno_t *myNewRows) const;
+@@ -327,8 +327,8 @@ TpetraRowGraphAdapter<User, UserCoord>::TpetraRowGraphAdapter(
+   // Unfortunately we have to copy the offsets and edge Ids
+   // because edge Ids are not usually stored in vertex id order.
+ 
+-  adjIdsHost_ = typename Base::ConstIdsHostView("adjIdsHost_", nedges);
+-  offsHost_ = typename Base::ConstOffsetsHostView("offsHost_", nvtx + 1);
++  adjIdsHost_ = typename GraphAdapter<User, UserCoord>::ConstIdsHostView("adjIdsHost_", nedges);
++  offsHost_ = typename GraphAdapter<User, UserCoord>::ConstOffsetsHostView("offsHost_", nvtx + 1);
+ 
+   localInds_t nbors("nbors", maxNumEntries);
+ 
+@@ -345,18 +345,18 @@ TpetraRowGraphAdapter<User, UserCoord>::TpetraRowGraphAdapter(
+   // Since there's no direct getter of offsets and edges in device view,
+   // we have to deep copy here
+   offsDevice_ =
+-      Kokkos::create_mirror_view_and_copy(typename Base::device_t(), offsHost_);
+-  adjIdsDevice_ = Kokkos::create_mirror_view_and_copy(typename Base::device_t(),
++      Kokkos::create_mirror_view_and_copy(typename GraphAdapter<User, UserCoord>::device_t(), offsHost_);
++  adjIdsDevice_ = Kokkos::create_mirror_view_and_copy(typename GraphAdapter<User, UserCoord>::device_t(),
+                                                       adjIdsHost_);
+ 
+   if (nWeightsPerVertex_ > 0) {
+     vertexWeights_ =
+         arcp(new strided_t[nWeightsPerVertex_], 0, nWeightsPerVertex_, true);
+ 
+-    vertexWeightsDevice_ = typename Base::WeightsDeviceView(
++    vertexWeightsDevice_ = typename GraphAdapter<User, UserCoord>::WeightsDeviceView(
+         "vertexWeightsDevice_", nvtx, nWeightsPerVertex_);
+ 
+-    vertexDegreeWeightsHost_ = typename Base::VtxDegreeHostView(
++    vertexDegreeWeightsHost_ = typename GraphAdapter<User, UserCoord>::VtxDegreeHostView(
+         "vertexDegreeWeightsHost_", nWeightsPerVertex_);
+ 
+     for (int i = 0; i < nWeightsPerVertex_; ++i) {
+@@ -368,7 +368,7 @@ TpetraRowGraphAdapter<User, UserCoord>::TpetraRowGraphAdapter(
+     edgeWeights_ =
+         arcp(new strided_t[nWeightsPerEdge_], 0, nWeightsPerEdge_, true);
+ 
+-    edgeWeightsDevice_ = typename Base::WeightsDeviceView(
++    edgeWeightsDevice_ = typename GraphAdapter<User, UserCoord>::WeightsDeviceView(
+         "nWeightsPerEdge_", graph_->getLocalNumRows(), nWeightsPerEdge_);
+   }
+ }
+@@ -386,7 +386,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::setWeights(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::setWeightsDevice(
+-    typename Base::ConstWeightsDeviceView1D val, int idx) {
++    typename GraphAdapter<User, UserCoord>::ConstWeightsDeviceView1D val, int idx) {
+   if (this->getPrimaryEntityType() == GRAPH_VERTEX)
+     setVertexWeightsDevice(val, idx);
+   else
+@@ -396,7 +396,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::setWeightsDevice(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::setWeightsHost(
+-    typename Base::ConstWeightsHostView1D val, int idx) {
++    typename GraphAdapter<User, UserCoord>::ConstWeightsHostView1D val, int idx) {
+   if (this->getPrimaryEntityType() == GRAPH_VERTEX)
+     setVertexWeightsHost(val, idx);
+   else
+@@ -418,7 +418,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::setVertexWeights(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::setVertexWeightsDevice(
+-    typename Base::ConstWeightsDeviceView1D weights, int idx) {
++    typename GraphAdapter<User, UserCoord>::ConstWeightsDeviceView1D weights, int idx) {
+ 
+   AssertCondition((idx >= 0) and (idx < nWeightsPerVertex_),
+                   "Invalid vertex weight index: " + std::to_string(idx));
+@@ -438,12 +438,12 @@ void TpetraRowGraphAdapter<User, UserCoord>::setVertexWeightsDevice(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::setVertexWeightsHost(
+-    typename Base::ConstWeightsHostView1D weightsHost, int idx) {
++    typename GraphAdapter<User, UserCoord>::ConstWeightsHostView1D weightsHost, int idx) {
+   AssertCondition((idx >= 0) and (idx < nWeightsPerVertex_),
+                   "Invalid vertex weight index: " + std::to_string(idx));
+ 
+   auto weightsDevice = Kokkos::create_mirror_view_and_copy(
+-      typename Base::device_t(), weightsHost);
++      typename GraphAdapter<User, UserCoord>::device_t(), weightsHost);
+ 
+   setVertexWeightsDevice(weightsDevice, idx);
+ }
+@@ -483,7 +483,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::setEdgeWeights(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::setEdgeWeightsDevice(
+-    typename Base::ConstWeightsDeviceView1D weights, int idx) {
++    typename GraphAdapter<User, UserCoord>::ConstWeightsDeviceView1D weights, int idx) {
+   AssertCondition((idx >= 0) and (idx < nWeightsPerVertex_),
+                   "Invalid edge weight index.");
+ 
+@@ -502,12 +502,12 @@ void TpetraRowGraphAdapter<User, UserCoord>::setEdgeWeightsDevice(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::setEdgeWeightsHost(
+-    typename Base::ConstWeightsHostView1D weightsHost, int idx) {
++    typename GraphAdapter<User, UserCoord>::ConstWeightsHostView1D weightsHost, int idx) {
+   AssertCondition((idx >= 0) and (idx < nWeightsPerVertex_),
+                   "Invalid edge weight index.");
+ 
+   auto weightsDevice = Kokkos::create_mirror_view_and_copy(
+-      typename Base::device_t(), weightsHost);
++      typename GraphAdapter<User, UserCoord>::device_t(), weightsHost);
+ 
+   setEdgeWeightsDevice(weightsDevice);
+ }
+@@ -530,12 +530,12 @@ void TpetraRowGraphAdapter<User, UserCoord>::getVertexIDsView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getVertexIDsDeviceView(
+-    typename Base::ConstIdsDeviceView &ids) const {
++    typename GraphAdapter<User, UserCoord>::ConstIdsDeviceView &ids) const {
+ 
+   // TODO: Making a  ConstIdsDeviceView LayoutLeft would proably remove the
+   //       need of creating tmpIds
+   auto idsDevice = graph_->getRowMap()->getMyGlobalIndices();
+-  auto tmpIds = typename Base::IdsDeviceView("", idsDevice.extent(0));
++  auto tmpIds = typename GraphAdapter<User, UserCoord>::IdsDeviceView("", idsDevice.extent(0));
+ 
+   Kokkos::deep_copy(tmpIds, idsDevice);
+ 
+@@ -545,11 +545,11 @@ void TpetraRowGraphAdapter<User, UserCoord>::getVertexIDsDeviceView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getVertexIDsHostView(
+-    typename Base::ConstIdsHostView &ids) const {
++    typename GraphAdapter<User, UserCoord>::ConstIdsHostView &ids) const {
+   // TODO: Making a  ConstIdsDeviceView LayoutLeft would proably remove the
+   //       need of creating tmpIds
+   auto idsDevice = graph_->getRowMap()->getMyGlobalIndices();
+-  auto tmpIds = typename Base::IdsHostView("", idsDevice.extent(0));
++  auto tmpIds = typename GraphAdapter<User, UserCoord>::IdsHostView("", idsDevice.extent(0));
+ 
+   Kokkos::deep_copy(tmpIds, idsDevice);
+ 
+@@ -573,8 +573,8 @@ void TpetraRowGraphAdapter<User, UserCoord>::getEdgesView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getEdgesDeviceView(
+-    typename Base::ConstOffsetsDeviceView &offsets,
+-    typename Base::ConstIdsDeviceView &adjIds) const {
++    typename GraphAdapter<User, UserCoord>::ConstOffsetsDeviceView &offsets,
++    typename GraphAdapter<User, UserCoord>::ConstIdsDeviceView &adjIds) const {
+ 
+   offsets = offsDevice_;
+   adjIds = adjIdsDevice_;
+@@ -583,8 +583,8 @@ void TpetraRowGraphAdapter<User, UserCoord>::getEdgesDeviceView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getEdgesHostView(
+-    typename Base::ConstOffsetsHostView &offsets,
+-    typename Base::ConstIdsHostView &adjIds) const {
++    typename GraphAdapter<User, UserCoord>::ConstOffsetsHostView &offsets,
++    typename GraphAdapter<User, UserCoord>::ConstIdsHostView &adjIds) const {
+ 
+   auto hostIDs = Kokkos::create_mirror_view(adjIdsDevice_);
+   Kokkos::deep_copy(hostIDs, adjIdsDevice_);
+@@ -616,12 +616,12 @@ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsDeviceView(
+-    typename Base::WeightsDeviceView1D &weights, int idx) const {
++    typename GraphAdapter<User, UserCoord>::WeightsDeviceView1D &weights, int idx) const {
+   AssertCondition((idx >= 0) and (idx < nWeightsPerVertex_),
+                   "Invalid vertex weight index.");
+ 
+   const auto size = vertexWeightsDevice_.extent(0);
+-  weights = typename Base::WeightsDeviceView1D("weights", size);
++  weights = typename GraphAdapter<User, UserCoord>::WeightsDeviceView1D("weights", size);
+ 
+   auto vertexWeightsDevice = this->vertexWeightsDevice_;
+   Kokkos::parallel_for(
+@@ -635,7 +635,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsDeviceView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsDeviceView(
+-    typename Base::WeightsDeviceView &weights) const {
++    typename GraphAdapter<User, UserCoord>::WeightsDeviceView &weights) const {
+ 
+   weights = vertexWeightsDevice_;
+ }
+@@ -643,11 +643,11 @@ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsDeviceView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsHostView(
+-    typename Base::WeightsHostView1D &weights, int idx) const {
++    typename GraphAdapter<User, UserCoord>::WeightsHostView1D &weights, int idx) const {
+   AssertCondition((idx >= 0) and (idx < nWeightsPerVertex_),
+                   "Invalid vertex weight index.");
+ 
+-  auto weightsDevice = typename Base::WeightsDeviceView1D(
++  auto weightsDevice = typename GraphAdapter<User, UserCoord>::WeightsDeviceView1D(
+       "weights", vertexWeightsDevice_.extent(0));
+   getVertexWeightsDeviceView(weightsDevice, idx);
+ 
+@@ -658,7 +658,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsHostView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getVertexWeightsHostView(
+-    typename Base::WeightsHostView &weights) const {
++    typename GraphAdapter<User, UserCoord>::WeightsHostView &weights) const {
+ 
+   weights = Kokkos::create_mirror_view(vertexWeightsDevice_);
+   Kokkos::deep_copy(weights, vertexWeightsDevice_);
+@@ -691,7 +691,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsDeviceView(
+-    typename Base::WeightsDeviceView1D &weights, int idx) const {
++    typename GraphAdapter<User, UserCoord>::WeightsDeviceView1D &weights, int idx) const {
+ 
+   weights = Kokkos::subview(edgeWeightsDevice_, Kokkos::ALL, idx);
+ }
+@@ -699,7 +699,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsDeviceView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsDeviceView(
+-    typename Base::WeightsDeviceView &weights) const {
++    typename GraphAdapter<User, UserCoord>::WeightsDeviceView &weights) const {
+ 
+   weights = edgeWeightsDevice_;
+ }
+@@ -707,7 +707,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsDeviceView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsHostView(
+-    typename Base::WeightsHostView1D &weights, int idx) const {
++    typename GraphAdapter<User, UserCoord>::WeightsHostView1D &weights, int idx) const {
+ 
+   auto weightsDevice = Kokkos::subview(edgeWeightsDevice_, Kokkos::ALL, idx);
+   weights = Kokkos::create_mirror_view(weightsDevice);
+@@ -717,7 +717,7 @@ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsHostView(
+ ////////////////////////////////////////////////////////////////////////////
+ template <typename User, typename UserCoord>
+ void TpetraRowGraphAdapter<User, UserCoord>::getEdgeWeightsHostView(
+-    typename Base::WeightsHostView &weights) const {
++    typename GraphAdapter<User, UserCoord>::WeightsHostView &weights) const {
+ 
+   weights = Kokkos::create_mirror_view(edgeWeightsDevice_);
+   Kokkos::deep_copy(weights, edgeWeightsDevice_);

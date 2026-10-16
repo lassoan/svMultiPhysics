@@ -59,3 +59,13 @@ set(SV_EXTERNALS_GIT_URL "http://github.com/SimVascular" CACHE STRING "Git URL f
 mark_as_advanced(SV_EXTERNALS_GIT_URL)
 #-----------------------------------------------------------------------------
 
+
+#-----------------------------------------------------------------------------
+# Dependencies that can be downloaded and built (see SvExtDependencies.cmake).
+# The SV_EXTERNALS_ENABLE_<name> options are set by the top-level CMakeLists.txt.
+include(SvExtDependencies)
+foreach(proj ${SV_EXTERNALS_DEPENDENCIES})
+  option(SV_EXTERNALS_ENABLE_${proj} "Download and build ${proj}" OFF)
+endforeach()
+set(SV_EXTERNALS_LIST ${SV_EXTERNALS_DEPENDENCIES})
+#-----------------------------------------------------------------------------

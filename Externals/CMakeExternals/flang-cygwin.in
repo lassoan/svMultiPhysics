@@ -1,0 +1,31 @@
+#!/bin/bash
+# Run the native Windows LLVM Flang compiler from Cygwin: convert Cygwin paths in
+# the arguments to Windows paths (similar to PETSc's win32fe wrappers, which do
+# not support Flang). Like win32fe, resolve -lNAME to libNAME.lib if it exists
+# in one of the -L directories (PETSc builds libraries with this naming), and
+# pass system libraries given as NAME.lib (e.g. Kernel32.lib) to the linker.
+FLANG="@SV_EXTERNALS_FLANG_EXE_CYGWIN@"
+libdirs=()
+for a in "$@"; do
+  case "$a" in
+    -L*) libdirs+=("${a#-L}") ;;
+  esac
+done
+args=()
+for a in "$@"; do
+  case "$a" in
+    -l*)
+      name="${a#-l}"; found=""
+      for d in "${libdirs[@]}"; do
+        if [ -f "$d/lib$name.lib" ]; then found="$d/lib$name.lib"; break; fi
+      done
+      if [ -n "$found" ]; then args+=("$(cygpath -w "$found")"); else args+=("$a"); fi ;;
+    /*) args+=("$(cygpath -w "$a")") ;;
+    *.lib) if [ -f "$a" ]; then args+=("$a"); else args+=("-l${a%.lib}"); fi ;;
+    -I/*) args+=("-I$(cygpath -w "${a#-I}")") ;;
+    -L/*) args+=("-L$(cygpath -w "${a#-L}")") ;;
+    -J/*) args+=("-J$(cygpath -w "${a#-J}")") ;;
+    *) args+=("$a") ;;
+  esac
+done
+exec "$FLANG" "${args[@]}"

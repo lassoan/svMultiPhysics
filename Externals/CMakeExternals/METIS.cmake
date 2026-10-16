@@ -1,0 +1,21 @@
+# METIS (PETSc fork, the version that PETSc downloads), built with the options
+# that PETSc uses
+set(proj METIS)
+
+set(_args)
+if(MSVC)
+  list(APPEND _args -DMSVC:BOOL=1)
+endif()
+
+ExternalProject_Add(${proj}
+  PREFIX ${SV_EXTERNALS_TOPLEVEL_BLD_DIR}/${proj}
+  URL ${SV_EXTERNALS_METIS_URL}
+  URL_HASH SHA256=${SV_EXTERNALS_METIS_SHA256}
+  DOWNLOAD_DIR ${SV_EXTERNALS_DOWNLOAD_DIR}
+  CMAKE_CACHE_ARGS
+    ${SV_EXTERNALS_COMMON_CMAKE_CACHE_ARGS}
+    -DCMAKE_INSTALL_PREFIX:PATH=${SV_EXTERNALS_METIS_INSTALL_DIR}
+    -DGKLIB_PATH:PATH=<SOURCE_DIR>/GKlib
+    -DGKRAND:BOOL=1
+    ${_args}
+  )
