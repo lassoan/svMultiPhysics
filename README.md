@@ -247,7 +247,7 @@ cmake ..\svMultiPhysics -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Rel
   -DSV_EXTERNALS_ENABLE_MUMPS=ON -DSV_EXTERNALS_ENABLE_PETSc=ON -DSV_EXTERNALS_ENABLE_svZeroDSolver=ON
 cmake --build . --config Release
 ```
-PETSc on Windows requires all the dependencies listed in this command. For a build without PETSc, the `Flang`, `Cygwin`, `METIS`, `ParMETIS`, `SuiteSparse`, `SuperLU_DIST`, `ScaLAPACK`, `Eigen` and `MUMPS` options can be omitted.
+Set the `CMAKE_BUILD_PARALLEL_LEVEL` environment variable (e.g. `set CMAKE_BUILD_PARALLEL_LEVEL=8`) before building to build in parallel; it also applies to the builds of the dependencies. PETSc on Windows requires all the dependencies listed in this command. For a build without PETSc, the `Flang`, `Cygwin`, `METIS`, `ParMETIS`, `SuiteSparse`, `SuperLU_DIST`, `ScaLAPACK`, `Eigen` and `MUMPS` options can be omitted.
 
 The executables are created in `svMultiPhysics-build/bin/Release` and `svMultiPhysics-petsc-build/bin/Release`. To run them, add the directories of the DLLs to the `PATH`: `Externals-install\MSMPI\runtime\Library\bin` (also contains `mpiexec`) and `Externals-install\OpenBLAS\bin`. To build the genBC programs of the tests with LLVM Flang, also add `Externals-install\Flang\Library\bin` to the `PATH` (see the [Testing Guide](tests/README.md#windows)).
 
