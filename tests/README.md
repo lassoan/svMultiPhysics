@@ -81,7 +81,9 @@ set CMAKE_GENERATOR=NMake Makefiles
 ```
 LLVM Flang for Windows is available from conda-forge. It has been tested with version 20.1.8 of the `flang`, `libflang` (Fortran runtime), `compiler-rt_win-64`, `libzlib` and `zstd` packages, extracted into the same directory. The `clang_rt.builtins-x86_64.lib` library from `compiler-rt_win-64` must be copied as `clang_rt.builtins.lib` into the `Library/lib` directory. Version 23.1.3 of the conda-forge `flang` package does not include the Fortran intrinsic module files (e.g. `ieee_arithmetic.mod`) that genBC needs.
 
-Tests that are coupled to svZeroDSolver (`sv0D` in their name) currently cannot run on Windows, because svMultiPhysics only looks for the svZeroDSolver interface library with `.so` or `.dylib` extensions. Exclude them using `pytest -k "not sv0D"`.
+Tests that are coupled to svZeroDSolver (`sv0D` in their name) require svZeroDSolver to be built in the `svZeroDSolver` directory of the svMultiPhysics source tree (e.g. by cloning https://github.com/SimVascular/svZeroDSolver there and building it with CMake in `svZeroDSolver/build`). On Windows, use a single-configuration CMake generator (e.g. *NMake Makefiles*), so that `libsvzero_interface.dll` is created in `svZeroDSolver/build/src/interface`.
+
+To run the PETSc tests, set `SVMP_EXECUTABLE_PETSC` to the `svmultiphysics.exe` of a separate build with PETSc (by default, `build-petsc/svMultiPhysics-build/bin/svmultiphysics` is used).
 
 Unit tests are built when CMake is run with `-DENABLE_UNIT_TEST=ON` and can be run using
 ```
