@@ -194,6 +194,65 @@ mpiexec -n 4 svmultiphysics.exe solver.xml
 
 Add `-DENABLE_UNIT_TEST=ON` to the CMake command to also build the unit tests. See the [Testing Guide](tests/README.md#windows) for running tests on Windows.
 
+Instead of installing the dependencies manually, they can be downloaded and built by the superbuild, see [Building the Dependencies with the Superbuild](#superbuild).
+
+<h2 id="superbuild"> Building the Dependencies with the Superbuild </h2>
+
+The top-level `CMakeLists.txt` is a superbuild: it first builds the `Externals` project, then svMultiPhysics. The `Externals` project can download and build the dependencies of svMultiPhysics. Each dependency is enabled with a `SV_EXTERNALS_ENABLE_<name>` CMake option (all are `OFF` by default, in which case the dependencies must be installed as described above). The built dependencies are installed in the `Externals-install` directory of the build directory and passed to svMultiPhysics automatically.
+
+| Option suffix `<name>` | Version | Notes |
+|---|---|---|
+| `MSMPI` | 10.1 | Windows only. SDK extracted from `Code/ThirdParty/msmpi/Installers`, runtime from conda-forge; no administrator rights needed |
+| `OpenBLAS` | 0.3.34 | BLAS and LAPACK. Prebuilt package on Windows |
+| `Flang` | 20.1.8 | Windows only. LLVM Flang Fortran compiler (conda-forge), for ScaLAPACK, MUMPS and the genBC programs of the tests |
+| `Cygwin` | | Windows only. Minimal Cygwin, needed for building PETSc |
+| `VTK` | 9.3.0 | Only the modules used by svMultiPhysics |
+| `Boost` | 1.89.0 | |
+| `HDF5` | 2.2.0 | Parallel (MPI) |
+| `HYPRE` | 2.33.0 | |
+| `Trilinos` | 16.2.2 | Trilinos 17 and later require C++20 |
+| `METIS`, `ParMETIS` | 5.1.0-p12, 4.0.3-p9 | PETSc forks |
+| `SuiteSparse` | 7.14.1 | |
+| `SuperLU_DIST` | 9.2.1 | |
+| `ScaLAPACK` | 2.2.3 | |
+| `Eigen` | 3.4.1 | |
+| `MUMPS` | 5.9.1 | Source package, built by PETSc |
+| `PETSc` | 3.26.0 | With the external packages of the Docker image |
+| `svZeroDSolver` | 3.2 | Built in the `svZeroDSolver` directory of the source tree, where the svZeroD test cases expect it |
+
+The versions and build options follow the [Docker image](Docker/ubuntu/dockerfile). On Windows, patches for MSVC and LLVM Flang (in `Externals/Patches`) are applied to Trilinos, SuperLU_DIST and MUMPS. On Linux and macOS, an MPI implementation and C, C++ and Fortran compilers must be installed; PETSc downloads and builds its external packages itself.
+
+Enabling Trilinos or PETSc also enables building svMultiPhysics with that package. As in the continuous integration tests, svMultiPhysics is built twice when PETSc is enabled: with Trilinos (or without external linear algebra package) in `svMultiPhysics-build`, and with PETSc in `svMultiPhysics-petsc-build`.
+
+On Linux and macOS, all dependencies (except MPI) can be built with
+```
+mkdir build
+cd build
+cmake ../svMultiPhysics -DSV_EXTERNALS_ENABLE_OpenBLAS=ON -DSV_EXTERNALS_ENABLE_VTK=ON \
+  -DSV_EXTERNALS_ENABLE_Boost=ON -DSV_EXTERNALS_ENABLE_HDF5=ON -DSV_EXTERNALS_ENABLE_HYPRE=ON \
+  -DSV_EXTERNALS_ENABLE_Trilinos=ON -DSV_EXTERNALS_ENABLE_PETSc=ON -DSV_EXTERNALS_ENABLE_svZeroDSolver=ON
+make
+```
+
+On Windows, run the superbuild from an *x64 Native Tools Command Prompt for VS 2022* (some dependencies are built with the NMake generator, which needs the compiler environment). Python 3 must be available, as it is used by the Trilinos configuration. To build all dependencies:
+```
+mkdir build
+cd build
+cmake ..\svMultiPhysics -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release ^
+  -DSV_EXTERNALS_ENABLE_MSMPI=ON -DSV_EXTERNALS_ENABLE_OpenBLAS=ON -DSV_EXTERNALS_ENABLE_Flang=ON ^
+  -DSV_EXTERNALS_ENABLE_Cygwin=ON -DSV_EXTERNALS_ENABLE_VTK=ON -DSV_EXTERNALS_ENABLE_Boost=ON ^
+  -DSV_EXTERNALS_ENABLE_HDF5=ON -DSV_EXTERNALS_ENABLE_HYPRE=ON -DSV_EXTERNALS_ENABLE_Trilinos=ON ^
+  -DSV_EXTERNALS_ENABLE_METIS=ON -DSV_EXTERNALS_ENABLE_ParMETIS=ON -DSV_EXTERNALS_ENABLE_SuiteSparse=ON ^
+  -DSV_EXTERNALS_ENABLE_SuperLU_DIST=ON -DSV_EXTERNALS_ENABLE_ScaLAPACK=ON -DSV_EXTERNALS_ENABLE_Eigen=ON ^
+  -DSV_EXTERNALS_ENABLE_MUMPS=ON -DSV_EXTERNALS_ENABLE_PETSc=ON -DSV_EXTERNALS_ENABLE_svZeroDSolver=ON
+cmake --build . --config Release
+```
+PETSc on Windows requires all the dependencies listed in this command. For a build without PETSc, the `Flang`, `Cygwin`, `METIS`, `ParMETIS`, `SuiteSparse`, `SuperLU_DIST`, `ScaLAPACK`, `Eigen` and `MUMPS` options can be omitted.
+
+The executables are created in `svMultiPhysics-build/bin/Release` and `svMultiPhysics-petsc-build/bin/Release`. To run them, add the directories of the DLLs to the `PATH`: `Externals-install\MSMPI\runtime\Library\bin` (also contains `mpiexec`) and `Externals-install\OpenBLAS\bin`. To build the genBC programs of the tests with LLVM Flang, also add `Externals-install\Flang\Library\bin` to the `PATH` (see the [Testing Guide](tests/README.md#windows)).
+
+The download and build directories can be changed with the `SV_EXTERNALS_DOWNLOAD_DIR` and `SV_EXTERNALS_INSTALL_DIR` CMake variables.
+
 <!--- =================================================================================== -->
 <!---                      External Linear Algebra Packages                               -->
 <!--- =================================================================================== -->
