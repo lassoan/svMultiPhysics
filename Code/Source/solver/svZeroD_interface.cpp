@@ -86,14 +86,18 @@ void create_svZeroD_model(std::string lpn_library_name, std::string lpn_json_fil
   std::string interface_lib_path = lpn_library_name.substr(0, lpn_library_name.find("libsvzero_interface"));
   std::string interface_lib_so = interface_lib_path + "libsvzero_interface.so";
   std::string interface_lib_dylib = interface_lib_path + "libsvzero_interface.dylib";
+  std::string interface_lib_dll = interface_lib_path + "libsvzero_interface.dll";
   std::ifstream lib_so_exists(interface_lib_so);
   std::ifstream lib_dylib_exists(interface_lib_dylib);
+  std::ifstream lib_dll_exists(interface_lib_dll);
   if (lib_so_exists) {
     interface->load_library(interface_lib_so);
   } else if (lib_dylib_exists) {
     interface->load_library(interface_lib_dylib);
+  } else if (lib_dll_exists) {
+    interface->load_library(interface_lib_dll);
   } else {
-    throw std::runtime_error("Could not find shared libraries " + interface_lib_so + " or " + interface_lib_dylib);
+    throw std::runtime_error("Could not find shared libraries " + interface_lib_so + ", " + interface_lib_dylib + " or " + interface_lib_dll);
   }
 
   // Initialize model

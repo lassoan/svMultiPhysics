@@ -95,7 +95,7 @@ static OneDSolverInterface* shared_lib_instance = nullptr;
 static double svOneDTime = 0.0;
 
 // ---------------------------------------------------------------------------
-// Helper: resolve the shared-library path (.so / .dylib / as-is).
+// Helper: resolve the shared-library path (.so / .dylib / .dll / as-is).
 // ---------------------------------------------------------------------------
 static std::string resolve_lib_path(const std::string& lib_base)
 {
@@ -105,6 +105,10 @@ static std::string resolve_lib_path(const std::string& lib_base)
 
   if (std::filesystem::is_regular_file(lib_base + ".dylib")) {
     return lib_base + ".dylib";
+  }
+
+  if (std::filesystem::is_regular_file(lib_base + ".dll")) {
+    return lib_base + ".dll";
   }
   return lib_base;  // already has extension, or will fail at dlopen time
 }

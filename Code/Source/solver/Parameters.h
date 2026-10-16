@@ -711,7 +711,7 @@ class svZeroDSolverInterfaceParameters : public ParameterLists
 ///     Controls how the 3D Newton iteration couples to the 1D solver
 ///     (same semantics as the 0D coupling_type).
 ///   Shared_library: Path to the 1D interface shared library.  The
-///     extension (.so or .dylib) may be omitted; it will be appended
+///     extension (.so, .dylib or .dll) may be omitted; it will be appended
 ///     automatically based on the platform.
 ///
 ///   Each coupled face specifies its own input file via

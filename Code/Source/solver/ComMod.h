@@ -769,7 +769,7 @@ class svOneDSolverInterfaceData
     /// \brief Path to the svOneDSolver interface shared library.
     ///
     /// This may be provided either with the platform-specific extension
-    /// (.so/.dylib) or without it.
+    /// (.so/.dylib/.dll) or without it.
     std::string solver_library;
 
     /// \brief True if the svOneDSolver interface settings were read from XML.
