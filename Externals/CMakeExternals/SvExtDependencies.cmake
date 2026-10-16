@@ -12,7 +12,7 @@
 
 # Dependencies in build order
 set(SV_EXTERNALS_DEPENDENCIES
-  MSMPI       # MPI SDK and runtime (Windows only)
+  MSMPI       # MS-MPI SDK and runtime (Windows only)
   OpenBLAS    # BLAS and LAPACK (prebuilt package on Windows)
   Flang       # LLVM Flang Fortran compiler (Windows only, used for ScaLAPACK, MUMPS and genBC)
   Cygwin      # Unix tools for building PETSc (Windows only)
@@ -123,6 +123,10 @@ set(SV_EXTERNALS_svZeroDSolver_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../svZer
 # Locations of the built dependencies
 
 set(SV_EXTERNALS_MSMPI_SDK_DIR "${SV_EXTERNALS_MSMPI_INSTALL_DIR}/sdk/PFiles/Microsoft SDKs/MPI")
+set(SV_EXTERNALS_MSMPI_INCLUDE_DIR "${SV_EXTERNALS_MSMPI_SDK_DIR}/Include")
+# mpif.h (Fortran) includes mpifptr.h, which is in Include/x64
+set(SV_EXTERNALS_MSMPI_INCLUDE_X64_DIR "${SV_EXTERNALS_MSMPI_SDK_DIR}/Include/x64")
+set(SV_EXTERNALS_MSMPI_LIB_DIR "${SV_EXTERNALS_MSMPI_SDK_DIR}/Lib/x64")
 set(SV_EXTERNALS_MSMPI_BIN_DIR "${SV_EXTERNALS_MSMPI_INSTALL_DIR}/runtime/Library/bin")
 set(SV_EXTERNALS_Flang_BIN_DIR "${SV_EXTERNALS_Flang_INSTALL_DIR}/Library/bin")
 set(SV_EXTERNALS_Flang_LIB_DIR "${SV_EXTERNALS_Flang_INSTALL_DIR}/Library/lib")
@@ -137,8 +141,8 @@ endif()
 set(SV_EXTERNALS_CMAKE_COMMAND "${CMAKE_COMMAND}")
 if(WIN32 AND SV_EXTERNALS_ENABLE_MSMPI)
   set(SV_EXTERNALS_CMAKE_COMMAND "${CMAKE_COMMAND}" -E env
-    "MSMPI_INC=${SV_EXTERNALS_MSMPI_SDK_DIR}/Include/"
-    "MSMPI_LIB64=${SV_EXTERNALS_MSMPI_SDK_DIR}/Lib/x64/"
+    "MSMPI_INC=${SV_EXTERNALS_MSMPI_INCLUDE_DIR}/"
+    "MSMPI_LIB64=${SV_EXTERNALS_MSMPI_LIB_DIR}/"
     "${CMAKE_COMMAND}")
 endif()
 

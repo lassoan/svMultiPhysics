@@ -11,7 +11,8 @@
 # specified explicitly, because PETSc cannot detect them from the Flang link line.
 set -e
 # The MS-MPI SDK path contains a space, use its short name
-MSMPI_SDK=$(cygpath -u "$(cygpath -ms "@CYG_MSMPI_SDK@")")
+MSMPI_INC=$(cygpath -u "$(cygpath -ms "@CYG_MSMPI_INCLUDE@")")
+MSMPI_LIB=$(cygpath -u "$(cygpath -ms "@CYG_MSMPI_LIB@")")
 MSMPI_BIN="@CYG_MSMPI_BIN@"
 FLANG_LIB="@CYG_FLANG_LIB@"
 SS="@CYG_SuiteSparse@/lib"
@@ -34,8 +35,8 @@ cd "@CYG_PETSC_SRC@"
   'CXXOPTFLAGS=-O2' \
   'FFLAGS=-fms-runtime-lib=dll' \
   'FOPTFLAGS=-O2' \
-  "--with-mpi-include=[$MSMPI_SDK/Include,$MSMPI_SDK/Include/x64]" \
-  "--with-mpi-lib=[$MSMPI_SDK/Lib/x64/msmpi.lib,$MSMPI_SDK/Lib/x64/msmpifec.lib]" \
+  "--with-mpi-include=[$MSMPI_INC,$MSMPI_INC/x64]" \
+  "--with-mpi-lib=[$MSMPI_LIB/msmpi.lib,$MSMPI_LIB/msmpifec.lib]" \
   --with-mpiexec="$MSMPI_BIN/mpiexec" \
   --with-blaslapack-lib="@CYG_OpenBLAS@/lib/libopenblas.lib" \
   --known-64-bit-blas-indices=0 \
@@ -45,11 +46,11 @@ cd "@CYG_PETSC_SRC@"
   --with-parmetis-lib="@CYG_ParMETIS@/lib/parmetis.lib" \
   --download-superlu \
   --download-ml \
-  "--download-ml-cmake-arguments=-DMPI_USE_COMPILER_WRAPPERS=OFF -DTPL_MPI_INCLUDE_DIRS=$MSMPI_SDK/Include -DTPL_MPI_LIBRARIES=$MSMPI_SDK/Lib/x64/msmpi.lib" \
+  "--download-ml-cmake-arguments=-DMPI_USE_COMPILER_WRAPPERS=OFF -DTPL_MPI_INCLUDE_DIRS=$MSMPI_INC -DTPL_MPI_LIBRARIES=$MSMPI_LIB/msmpi.lib" \
   --with-superlu_dist-include="@CYG_SuperLU_DIST@/include" \
   --with-superlu_dist-lib="@CYG_SuperLU_DIST@/lib/superlu_dist.lib" \
   --with-eigen-include="@CYG_Eigen@" \
-  "--with-hypre-include=[@CYG_HYPRE@/include,$MSMPI_SDK/Include]" \
+  "--with-hypre-include=[@CYG_HYPRE@/include,$MSMPI_INC]" \
   --with-hypre-lib="@CYG_HYPRE@/lib/HYPRE.lib" \
   --with-suitesparse-include="@CYG_SuiteSparse@/include/suitesparse" \
   "--with-suitesparse-lib=[$SS/spqr_static.lib,$SS/umfpack_static.lib,$SS/klu_static.lib,$SS/klu_cholmod_static.lib,$SS/cholmod_static.lib,$SS/btf_static.lib,$SS/ccolamd_static.lib,$SS/colamd_static.lib,$SS/camd_static.lib,$SS/amd_static.lib,$SS/suitesparseconfig_static.lib]" \

@@ -31,7 +31,8 @@ if(WIN32)
   set(_src ${SV_EXTERNALS_TOPLEVEL_BLD_DIR}/${proj}/src/${proj})
   sv_externals_cygwin_path(CYG_PETSC_SRC "${_src}")
   sv_externals_cygwin_path(CYG_PETSC_PREFIX "${SV_EXTERNALS_PETSc_INSTALL_DIR}")
-  sv_externals_cygwin_path(CYG_MSMPI_SDK "${SV_EXTERNALS_MSMPI_SDK_DIR}")
+  sv_externals_cygwin_path(CYG_MSMPI_INCLUDE "${SV_EXTERNALS_MSMPI_INCLUDE_DIR}")
+  sv_externals_cygwin_path(CYG_MSMPI_LIB "${SV_EXTERNALS_MSMPI_LIB_DIR}")
   sv_externals_cygwin_path(CYG_MSMPI_BIN "${SV_EXTERNALS_MSMPI_BIN_DIR}")
   sv_externals_cygwin_path(CYG_FLANG_LIB "${SV_EXTERNALS_Flang_LIB_DIR}")
   sv_externals_cygwin_path(CYG_MUMPS_PACKAGE
@@ -54,6 +55,12 @@ if(WIN32)
     BUILD_COMMAND ${SV_EXTERNALS_Cygwin_INSTALL_DIR}/bin/bash.exe --login -c ${_script}
     INSTALL_COMMAND ""
     DEPENDS ${_deps}
+    # Write the output to log files: MSBuild treats output lines containing
+    # "error :" as errors, even if the build step succeeds
+    LOG_CONFIGURE TRUE
+    LOG_BUILD TRUE
+    LOG_INSTALL TRUE
+    LOG_OUTPUT_ON_FAILURE TRUE
     )
 else()
   sv_externals_enabled_depends(_deps OpenBLAS)

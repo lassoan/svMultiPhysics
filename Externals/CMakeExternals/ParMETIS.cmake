@@ -9,7 +9,7 @@ if(MSVC)
   list(APPEND _args -DMSVC:BOOL=1)
 endif()
 if(WIN32 AND SV_EXTERNALS_ENABLE_MSMPI)
-  list(APPEND _args -DMPI_INCLUDE_PATH:PATH=${SV_EXTERNALS_MSMPI_SDK_DIR}/Include)
+  list(APPEND _args -DMPI_INCLUDE_PATH:PATH=${SV_EXTERNALS_MSMPI_INCLUDE_DIR})
 endif()
 
 ExternalProject_Add(${proj}

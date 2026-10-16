@@ -30,4 +30,10 @@ ExternalProject_Add(${proj}
   CONFIGURE_COMMAND ${_configure}
   BUILD_COMMAND ${_build}
   INSTALL_COMMAND ""
+  # Write the output to log files: MSBuild treats output lines containing
+  # "error :" as errors, even if the build step succeeds
+  LOG_CONFIGURE TRUE
+  LOG_BUILD TRUE
+  LOG_INSTALL TRUE
+  LOG_OUTPUT_ON_FAILURE TRUE
   )
