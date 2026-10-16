@@ -397,6 +397,8 @@ if(ENABLE_UNIT_TEST)
     # Use the same C runtime library (/MD) as the rest of the project
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
   endif()
+  # Do not install googletest with svMultiPhysics
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_STANDARD GREATER_EQUAL 20)

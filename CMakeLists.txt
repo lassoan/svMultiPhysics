@@ -78,6 +78,7 @@ set(ENABLE_COVERAGE OFF CACHE BOOL "Enable code coverage")
 set(ENABLE_ARRAY_INDEX_CHECKING OFF CACHE BOOL "Enable Array index checking")
 set(SV_LOCAL_VTK_PATH "" CACHE STRING "Path to a local build of VTK.")
 set(ENABLE_UNIT_TEST OFF CACHE BOOL "Enable Unit Test by Google Test")
+set(SV_ENABLE_DISTRIBUTION OFF CACHE BOOL "Enable creating installation packages (with CPack) in the svMultiPhysics build")
 
 #-----------------------------------------------------------------------------
 # RPATH handling
@@ -154,7 +155,28 @@ if(SV_EXTERNALS_BLAS_LAPACK_LIBRARIES)
 endif()
 string(REPLACE ";" "$<SEMICOLON>" SV_PREFIX_PATH "${SV_PREFIX_PATH}")
 
-# svMultiPhysics 
+# Installation package (see Distribution/CMakeLists.txt): the shared libraries
+# of the dependencies built by the superbuild are included in the package
+set(SV_DISTRIBUTION_DEPENDENCY_DIRS "" CACHE STRING "Directories where the shared libraries that svmultiphysics depends on are searched for when creating an installation package")
+set(SV_NSIS_EXECUTABLE "" CACHE FILEPATH "NSIS makensis executable for creating the Windows installer (if not in the PATH)")
+set(SV_DISTRIBUTION_DEPENDENCY_DIRS_VALUE ${SV_DISTRIBUTION_DEPENDENCY_DIRS})
+foreach(proj MSMPI OpenBLAS VTK)
+  if(SV_EXTERNALS_ENABLE_${proj})
+    if(proj STREQUAL "MSMPI")
+      list(APPEND SV_DISTRIBUTION_DEPENDENCY_DIRS_VALUE ${SV_EXTERNALS_MSMPI_BIN_DIR})
+      list(APPEND SV_DEPENDENCIES_CMAKE_ARGS -DMPIEXEC_EXECUTABLE:FILEPATH=${SV_EXTERNALS_MSMPI_BIN_DIR}/mpiexec.exe)
+    else()
+      list(APPEND SV_DISTRIBUTION_DEPENDENCY_DIRS_VALUE ${SV_EXTERNALS_${proj}_INSTALL_DIR}/bin ${SV_EXTERNALS_${proj}_INSTALL_DIR}/lib)
+    endif()
+  endif()
+endforeach()
+string(REPLACE ";" "$<SEMICOLON>" SV_DISTRIBUTION_DEPENDENCY_DIRS_VALUE "${SV_DISTRIBUTION_DEPENDENCY_DIRS_VALUE}")
+list(APPEND SV_DEPENDENCIES_CMAKE_ARGS
+  -DSV_ENABLE_DISTRIBUTION:BOOL=${SV_ENABLE_DISTRIBUTION}
+  -DSV_DISTRIBUTION_DEPENDENCY_DIRS:STRING=${SV_DISTRIBUTION_DEPENDENCY_DIRS_VALUE}
+  -DSV_NSIS_EXECUTABLE:FILEPATH=${SV_NSIS_EXECUTABLE})
+
+# svMultiPhysics
 #
 set(SV_ADDITIONAL_CMAKE_ARGS "" CACHE STRING "If more options want to be provided to the sv_externals build, they can be with this string")
 set(SV_APPLE_CMAKE_ARGS)

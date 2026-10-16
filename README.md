@@ -253,6 +253,17 @@ The executables are created in `svMultiPhysics-build/bin/Release` and `svMultiPh
 
 The download and build directories can be changed with the `SV_EXTERNALS_DOWNLOAD_DIR` and `SV_EXTERNALS_INSTALL_DIR` CMake variables.
 
+<h2 id="installation_package"> Creating an Installation Package </h2>
+
+An installation package that contains the `svmultiphysics` executable and the shared libraries it depends on (e.g. MPI, BLAS/LAPACK, VTK; on Windows also the Microsoft Visual C++ runtime and `mpiexec`) can be created with CPack. Configure with `-DSV_ENABLE_DISTRIBUTION=ON` (with the superbuild or when building the `Code` directory directly), then run `cpack` in the svMultiPhysics build directory (`svMultiPhysics-build` in the superbuild):
+```
+cpack -C Release
+```
+
+The package type is selected with `SV_INSTALLER_TYPE`: on Windows `NSIS` (installer, default), `ZIP` or `WIX`; on Linux `TGZ` (default) or `DEB`; on macOS `TGZ` (default) or `productbuild`. The NSIS installer requires [NSIS](https://nsis.sourceforge.io); if `makensis` is not in the `PATH`, set its location with `SV_NSIS_EXECUTABLE`. The installer offers to add the `bin` directory (with `svmultiphysics` and `mpiexec`) to the `PATH`.
+
+The shared libraries are searched for in the directories listed in `SV_DISTRIBUTION_DEPENDENCY_DIRS` (set automatically for the dependencies built by the superbuild) and, on Windows, in the `PATH`. On Linux and macOS, libraries of the operating system are not included, and the MPI implementation is expected to be installed on the target computer.
+
 <!--- =================================================================================== -->
 <!---                      External Linear Algebra Packages                               -->
 <!--- =================================================================================== -->
