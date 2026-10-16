@@ -94,7 +94,9 @@ endif()
 # add trilinos flags and defines
 if(USE_TRILINOS)
   ADD_DEFINITIONS(-DWITH_TRILINOS)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++${CMAKE_CXX_STANDARD}")
+  if(NOT MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++${CMAKE_CXX_STANDARD}")
+  endif()
 endif()
 
 # Build with the PETSc linear algebra package.
@@ -114,7 +116,8 @@ if(NOT "${SV_PETSC_DIR}" STREQUAL "")
    endif()
 
   set(PETSC_INCLUDE_DIRS "${SV_PETSC_DIR}/include;${SV_PETSC_DIR}/../include")
-  set(PETSC_LIBRARY_DIRS "-L${SV_PETSC_DIR}/lib -lpetsc")
+  find_library(PETSC_LIBRARY NAMES petsc libpetsc PATHS "${SV_PETSC_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
+  set(PETSC_LIBRARY_DIRS "${PETSC_LIBRARY}")
   message("\nBuilding with the PETSc package; the include and libraries directories are: ")
   message("  PETSC_LIBRARY_DIRS = ${PETSC_LIBRARY_DIRS}")
   message("  PETSC_INCLUDE_DIRS = ${PETSC_INCLUDE_DIRS}")
@@ -125,7 +128,12 @@ if(NOT "${SV_PETSC_DIR}" STREQUAL "")
 
   # Set C++ directive to use PETSc.
   ADD_DEFINITIONS(-DUSE_PETSC)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic -std=c99")
+  if(MSVC)
+    # PETSc headers require the standard conforming preprocessor
+    add_compile_options(/Zc:preprocessor)
+  else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic -std=c99")
+  endif()
 
   set(USE_PETSC 1)
 

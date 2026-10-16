@@ -5,6 +5,7 @@
 // This file contains PetscImpl and PETSc-dependent functions. 
 
 #include "petsc_impl.h"
+#include <cfloat>
 #include <locale.h>
 
 LHSCtx plhs;       /* PETSc lhs */
@@ -305,7 +306,7 @@ void petsc_solve(PetscReal *resNorm,  PetscReal *initNorm,  PetscReal *dB,
 
     /* Get convergence info. */
     if (usepreonly){
-        *resNorm   = __DBL_EPSILON__;
+        *resNorm   = DBL_EPSILON;
     }
     else {
         KSPGetResidualHistory(psol[cEq].ksp, (const PetscReal **) &a, &na);
@@ -513,7 +514,7 @@ PetscErrorCode petsc_create_bc(const PetscInt dof, const PetscInt cEq, \
 {   
     PetscInt  i, j, cc, ii;
     PetscInt *row1, *row2;
-    PetscReal eps = 1.0e6*__DBL_EPSILON__;
+    PetscReal eps = 1.0e6*DBL_EPSILON;
 
     PetscFunctionBeginUser;
 

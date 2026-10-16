@@ -8,7 +8,14 @@
 
 #include <petscksp.h>
 #include <petscao.h>
+#ifdef _WIN32
+#include <io.h>  // access()
+#ifndef F_OK
+#define F_OK 0
+#endif
+#else
 #include <unistd.h>
+#endif
 #include <stdbool.h>
 
 #include "consts.h"
