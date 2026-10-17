@@ -542,6 +542,12 @@ void construct_fluid(ComMod& com_mod, const mshType& lM, const SolutionStates& s
   //
   int num_c = lM.nEl / 10;
 
+  // Function spaces for velocity and pressure for the two Gauss integrations.
+  // They are the same for all elements, so they are set only once.
+  std::array<fsType,2> fs_1, fs_2;
+  fs::get_thood_fs(com_mod, fs_1, lM, vmsStab, 1);
+  fs::get_thood_fs(com_mod, fs_2, lM, vmsStab, 2);
+
   for (int e = 0; e < lM.nEl; e++) {
     #ifdef debug_construct_fluid
     dmsg << "---------- e: " << e+1;
@@ -578,10 +584,9 @@ void construct_fluid(ComMod& com_mod, const mshType& lM, const SolutionStates& s
     // Initialize residual and tangents
     lR = 0.0;
     lK = 0.0;
-    std::array<fsType,2> fs;
 
     // Set function spaces for velocity and pressure.
-    fs::get_thood_fs(com_mod, fs, lM, vmsStab, 1);
+    fsType* fs = fs_1.data();
 
     // Define element coordinates appropriate for function spaces
     Array<double> xwl(nsd,fs[0].eNoN); 
@@ -681,7 +686,7 @@ void construct_fluid(ComMod& com_mod, const mshType& lM, const SolutionStates& s
 
     // Set function spaces for velocity and pressure.
     //
-    fs::get_thood_fs(com_mod, fs, lM, vmsStab, 2);
+    fs = fs_2.data();
 
     // Gauss integration 2
     //
