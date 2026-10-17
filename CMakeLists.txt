@@ -80,6 +80,19 @@ set(SV_LOCAL_VTK_PATH "" CACHE STRING "Path to a local build of VTK.")
 set(ENABLE_UNIT_TEST OFF CACHE BOOL "Enable Unit Test by Google Test")
 set(SV_ENABLE_DISTRIBUTION OFF CACHE BOOL "Enable creating installation packages (with CPack) in the svMultiPhysics build")
 
+# Visual Studio toolset for building svMultiPhysics (the dependencies are built
+# with the default toolset). svMultiPhysics built with clang-cl (ClangCL toolset,
+# installed with the "C++ Clang tools for Windows" component of Visual Studio)
+# runs faster than built with MSVC, so ClangCL is used when it is installed.
+set(_default_toolset "")
+if(CMAKE_GENERATOR MATCHES "^Visual Studio" AND NOT CMAKE_GENERATOR_TOOLSET)
+  file(GLOB _clangcl_toolset "${CMAKE_GENERATOR_INSTANCE}/MSBuild/Microsoft/VC/*/Platforms/x64/PlatformToolsets/ClangCL")
+  if(_clangcl_toolset)
+    set(_default_toolset "ClangCL")
+  endif()
+endif()
+set(SV_GENERATOR_TOOLSET "${_default_toolset}" CACHE STRING "Visual Studio toolset for building svMultiPhysics (for example ClangCL), empty for the default toolset")
+
 #-----------------------------------------------------------------------------
 # RPATH handling
 # No objects built directly with project. Not needed!
@@ -189,9 +202,22 @@ set(SV_ADDITIONAL_CMAKE_ARGS "" CACHE STRING "If more options want to be provide
 set(SV_APPLE_CMAKE_ARGS)
 
 # Build options shared by the svMultiPhysics builds
-set(SV_COMMON_CMAKE_CACHE_ARGS
+set(SV_GENERATOR_ARGS)
+set(SV_COMPILER_CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER})
+if(SV_GENERATOR_TOOLSET)
+  # The toolset determines the compilers
+  set(SV_GENERATOR_ARGS
+    CMAKE_GENERATOR ${CMAKE_GENERATOR}
+    CMAKE_GENERATOR_TOOLSET ${SV_GENERATOR_TOOLSET})
+  if(CMAKE_GENERATOR_PLATFORM)
+    list(APPEND SV_GENERATOR_ARGS CMAKE_GENERATOR_PLATFORM ${CMAKE_GENERATOR_PLATFORM})
+  endif()
+  set(SV_COMPILER_CMAKE_CACHE_ARGS)
+endif()
+set(SV_COMMON_CMAKE_CACHE_ARGS
+    ${SV_COMPILER_CMAKE_CACHE_ARGS}
     -DCMAKE_CXX_FLAGS:STRING=${CMAKE_CXX_FLAGS}
     -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
     -DCMAKE_PREFIX_PATH:STRING=${SV_PREFIX_PATH}
@@ -227,6 +253,7 @@ ExternalProject_Add(svMultiPhysics
   DOWNLOAD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
+  ${SV_GENERATOR_ARGS}
   CMAKE_COMMAND ${SV_EXTERNALS_CMAKE_COMMAND}
   CMAKE_CACHE_ARGS
     ${SV_COMMON_CMAKE_CACHE_ARGS}
@@ -244,6 +271,7 @@ if(SV_EXTERNALS_ENABLE_PETSc)
     DOWNLOAD_COMMAND ""
     UPDATE_COMMAND ""
     INSTALL_COMMAND ""
+    ${SV_GENERATOR_ARGS}
     CMAKE_COMMAND ${SV_EXTERNALS_CMAKE_COMMAND}
     CMAKE_CACHE_ARGS
       ${SV_COMMON_CMAKE_CACHE_ARGS}

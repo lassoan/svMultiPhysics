@@ -251,6 +251,8 @@ cmake --build . --config Release
 ```
 Set the `CMAKE_BUILD_PARALLEL_LEVEL` environment variable (e.g. `set CMAKE_BUILD_PARALLEL_LEVEL=8`) before building to build in parallel; it also applies to the builds of the dependencies. PETSc on Windows requires all the dependencies listed in this command. For a build without PETSc, the `Flang`, `Cygwin`, `METIS`, `ParMETIS`, `SuiteSparse`, `SuperLU_DIST`, `ScaLAPACK`, `Eigen` and `MUMPS` options can be omitted.
 
+On Windows, svMultiPhysics is built with clang-cl (the `ClangCL` Visual Studio toolset) if the *C++ Clang tools for Windows* component of Visual Studio is installed, because the simulations run faster (about 10% in our tests) than with MSVC. The dependencies are built with MSVC. The toolset is set by the `SV_GENERATOR_TOOLSET` CMake variable (set it to an empty string to build svMultiPhysics with MSVC). Using Trilinos built with MSVC from svMultiPhysics built with clang-cl requires the changes of the Kokkos headers in `Externals/Patches/trilinos-16.2.2-msvc.patch`, which make the class layouts of the two compilers match (the superbuild applies them).
+
 The executables are created in `svMultiPhysics-build/bin/Release` and `svMultiPhysics-petsc-build/bin/Release`. To run them, add the directories of the DLLs to the `PATH`: `Externals-install\MSMPI\runtime\Library\bin` (also contains `mpiexec`) and `Externals-install\OpenBLAS\bin`. To build the genBC programs of the tests with LLVM Flang, also add `Externals-install\Flang\Library\bin` to the `PATH` (see the [Testing Guide](tests/README.md#windows)).
 
 The download and build directories can be changed with the `SV_EXTERNALS_DOWNLOAD_DIR` and `SV_EXTERNALS_INSTALL_DIR` CMake variables.
