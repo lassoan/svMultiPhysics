@@ -483,3 +483,35 @@ index 1b33eb07..78e80cf3 100644
  
    weights = Kokkos::create_mirror_view(edgeWeightsDevice_);
    Kokkos::deep_copy(weights, edgeWeightsDevice_);
+diff --git a/packages/kokkos/core/src/Kokkos_Macros.hpp b/packages/kokkos/core/src/Kokkos_Macros.hpp
+index 4ac3c9e..f5ca105 100644
+--- a/packages/kokkos/core/src/Kokkos_Macros.hpp
++++ b/packages/kokkos/core/src/Kokkos_Macros.hpp
+@@ -699,11 +699,11 @@ static constexpr bool kokkos_omp_on_host() { return false; }
+ #undef __CUDA_ARCH__
+ #endif
+ 
+-#if (defined(KOKKOS_IMPL_WINDOWS_CUDA) || defined(KOKKOS_COMPILER_MSVC)) && \
+-    !defined(KOKKOS_COMPILER_CLANG)
++#if defined(KOKKOS_IMPL_WINDOWS_CUDA) || defined(_MSC_VER)
+ // MSVC (as of 16.5.5 at least) does not do empty base class optimization by
+ // default when there are multiple bases, even though the standard requires it
+-// for standard layout types.
++// for standard layout types. clang-cl uses the same class layout as MSVC, so
++// it needs this too (to be compatible with code compiled by MSVC).
+ #define KOKKOS_IMPL_ENFORCE_EMPTY_BASE_OPTIMIZATION __declspec(empty_bases)
+ #else
+ #define KOKKOS_IMPL_ENFORCE_EMPTY_BASE_OPTIMIZATION
+diff --git a/packages/kokkos/tpls/mdspan/include/experimental/__p0009_bits/config.hpp b/packages/kokkos/tpls/mdspan/include/experimental/__p0009_bits/config.hpp
+index 9a00e42..7cd1e4f 100644
+--- a/packages/kokkos/tpls/mdspan/include/experimental/__p0009_bits/config.hpp
++++ b/packages/kokkos/tpls/mdspan/include/experimental/__p0009_bits/config.hpp
+@@ -117,7 +117,7 @@ static_assert(MDSPAN_IMPL_CPLUSPLUS >= MDSPAN_CXX_STD_14, "mdspan requires C++14
+ #if !defined(MDSPAN_IMPL_USE_ATTRIBUTE_NO_UNIQUE_ADDRESS)
+ #  if ((MDSPAN_IMPL_HAS_CPP_ATTRIBUTE(no_unique_address) >= 201803L) && \
+        (!defined(__NVCC__) || ((__CUDACC_VER_MAJOR__ * 100 + __CUDACC_VER_MINOR__ * 10 < 1290) && MDSPAN_HAS_CXX_20)) && \
+-       (!defined(MDSPAN_IMPL_COMPILER_MSVC) || MDSPAN_HAS_CXX_20))
++       ((!defined(MDSPAN_IMPL_COMPILER_MSVC) && !defined(MDSPAN_IMPL_COMPILER_MSVC_CLANG)) || MDSPAN_HAS_CXX_20))
+ #    define MDSPAN_IMPL_USE_ATTRIBUTE_NO_UNIQUE_ADDRESS 1
+ #    define MDSPAN_IMPL_NO_UNIQUE_ADDRESS [[no_unique_address]]
+ #  else

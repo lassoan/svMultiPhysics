@@ -61,7 +61,7 @@ inline std::string PlatformSupport::demangle_symbol(const char* symbol)
         return std::string();
     }
 
-#if defined(__GNUC__) || defined(__clang__)
+#if !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__))
     int status = 0;
     char* demangled = abi::__cxa_demangle(symbol, nullptr, nullptr, &status);
     if (status == 0 && demangled != nullptr) {

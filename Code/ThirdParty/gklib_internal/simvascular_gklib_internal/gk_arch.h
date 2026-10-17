@@ -55,6 +55,8 @@
 **************************************************************************/
 #ifdef WIN32
 typedef ptrdiff_t ssize_t;
+/* read() and write() */
+#include <io.h>
 #endif
 
 
