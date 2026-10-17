@@ -82,6 +82,17 @@ __global__ void k_sp_values(int nnzS, const int* spMap, const float* S, double* 
   if (e < nnzS) atomicAdd(&SP[spMap[e]], (double)S[e]);
 }
 
+// y = dinv1 .* (S*x) (dinv1 = 1/diag(S)), for the power iteration
+__global__ void k_dinv_s(int nNo, const int* sRow, const int* sCol, const float* S, const double* dinv1,
+    const double* x, double* y)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= nNo) return;
+  double s = 0.0;
+  for (int j = sRow[i]; j < sRow[i + 1]; j++) s += (double)S[j] * x[sCol[j]];
+  y[i] = dinv1[i] * s;
+}
+
 __global__ void k_jacobi_diag(int nNo, const int* sRow, const int* sCol, const float* S, double omega, double* dinv)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -507,6 +518,10 @@ __global__ void k_cg_amg2(BArgs a)
 void amg_setup_impl(Gpu& g, const std::vector<int>& sRowH, const std::vector<int>& sColH)
 {
   const int n = g.nNo;
+  // Aggregate radius in the graph of S: 1 (a node and its neighbors), or 2
+  // (also the unaggregated neighbors of the neighbors) for large meshes, so
+  // that the dense coarse matrix stays small
+  int rad = getenv("SVGPU_AMG_RAD") ? atoi(getenv("SVGPU_AMG_RAD")) : (n > 50000 ? 2 : 1);
   std::vector<int> agg(n, -1);
   int nc = 0;
   for (int i = 0; i < n; i++) {
@@ -517,6 +532,14 @@ void amg_setup_impl(Gpu& g, const std::vector<int>& sRowH, const std::vector<int
     }
     if (!free) continue;
     for (int j = sRowH[i]; j < sRowH[i + 1]; j++) agg[sColH[j]] = nc;
+    if (rad >= 2) {
+      for (int j = sRowH[i]; j < sRowH[i + 1]; j++) {
+        int k = sColH[j];
+        for (int l = sRowH[k]; l < sRowH[k + 1]; l++) {
+          if (agg[sColH[l]] < 0) agg[sColH[l]] = nc;
+        }
+      }
+    }
     agg[i] = nc++;
   }
   for (int i = 0; i < n; i++) {
@@ -580,7 +603,34 @@ void amg_numeric_impl(Gpu& g, const int* sRow, const int* sCol, const float* sVa
   CUDA_CHECK(cudaMemset(amg.spVal, 0, (size_t)amg.nnzSP * sizeof(double)));
   k_sp_values<<<blocks(nnzS), TPB>>>(nnzS, amg.spMap, sVal, amg.spVal);
   CUDA_CHECK(cudaGetLastError());
-  static const double omega = getenv("SVGPU_AMG_OMEGA") ? atof(getenv("SVGPU_AMG_OMEGA")) : 0.8;
+  // Jacobi damping omega = 1.8/lambda_max(D^-1 S), lambda_max from a power
+  // iteration in the first solve
+  static double omega = 0.0;
+  if (omega == 0.0) {
+    if (getenv("SVGPU_AMG_OMEGA")) {
+      omega = atof(getenv("SVGPU_AMG_OMEGA"));
+    } else {
+      const int n = g.nNo;
+      double* x = g.alloc(n);
+      double* y = g.alloc(n);
+      k_jacobi_diag<<<blocks(n), TPB>>>(n, sRow, sCol, sVal, 1.0, amg.dinv);
+      std::vector<double> h(n);
+      for (int i = 0; i < n; i++) h[i] = 1.0 + 0.5 * std::sin(0.37 * i);
+      g.upload(x, h.data(), n);
+      double lambda = 1.0;
+      for (int k = 0; k < 30; k++) {
+        k_dinv_s<<<blocks(n), TPB>>>(n, sRow, sCol, sVal, amg.dinv, x, y);
+        double nx = std::sqrt(g.dot(x, x, n)), ny = std::sqrt(g.dot(y, y, n));
+        lambda = ny / nx;
+        g.scale(0.0, x, n);
+        g.axpy(1.0 / ny, y, x, n);
+      }
+      omega = 1.8 / (1.1 * lambda);
+      printf("svgpu: lambda_max(D^-1 S) ~ %.3f, Jacobi omega = %.3f\n", lambda, omega);
+      cudaFree(x);
+      cudaFree(y);
+    }
+  }
   k_jacobi_diag<<<blocks(g.nNo), TPB>>>(g.nNo, sRow, sCol, sVal, omega, amg.dinv);
   CUDA_CHECK(cudaGetLastError());
   if (!amg.nbGJ) {
