@@ -351,6 +351,14 @@ simvascular_add_executable(${SV_MULTIPHYSICS_EXE}
   INSTALL_COMP CoreExecutables
   INSTALL_DESTINATION ${SV_INSTALL_RUNTIME_DIR})
 
+# Experimental GPU solver and assembly (Code/Source/gpu, built separately with nvcc)
+set(SV_GPU_DIR "" CACHE PATH "Build directory of the svgpu library (GPU NS solver)")
+if(SV_GPU_DIR)
+  target_compile_definitions(${SV_MULTIPHYSICS_EXE} PRIVATE SV_USE_GPU)
+  target_include_directories(${SV_MULTIPHYSICS_EXE} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../gpu)
+  target_link_libraries(${SV_MULTIPHYSICS_EXE} ${SV_GPU_DIR}/svgpu.lib)
+endif()
+
 # Use the mimalloc memory allocator instead of the default malloc/free
 # (much faster for the many small arrays allocated by svMultiPhysics on Windows).
 # It is linked before the other libraries so that it is loaded first.

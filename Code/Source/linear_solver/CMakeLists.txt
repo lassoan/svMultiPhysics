@@ -51,6 +51,14 @@ add_library(${lib} ${SV_LIBRARY_TYPE} ${CSRCS})
 target_include_directories(${lib} PRIVATE ${SV_SOURCE_DIR}/ThirdParty/eigen/include/eigen3)
 
 target_link_libraries(${lib} ${MPI_LIBRARY} ${MPI_Fortran_LIBRARIES})
+
+# Experimental GPU NS solver (Code/Source/gpu, built separately with nvcc)
+set(SV_GPU_DIR "" CACHE PATH "Build directory of the svgpu library (GPU NS solver)")
+if(SV_GPU_DIR)
+  target_compile_definitions(${lib} PRIVATE SV_USE_GPU)
+  target_include_directories(${lib} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../gpu)
+  target_link_libraries(${lib} ${SV_GPU_DIR}/svgpu.lib)
+endif()
 #target_link_libraries(${lib} ${MPI_LIBRARY} ${MPI_Fortran_LIBRARIES} ${VTK_LIBRARIES})
 
 # extra MPI libraries only if there are not set to NOT_FOUND or other null 

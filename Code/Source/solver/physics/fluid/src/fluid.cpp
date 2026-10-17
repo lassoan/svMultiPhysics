@@ -13,6 +13,13 @@
 #include "uris.h"
 
 #include <array>
+#ifdef SV_USE_GPU
+#include "svgpu.h"
+#include <chrono>
+#include <cstdlib>
+extern double svgpu_t_assem;
+extern bool svgpu_val_on_device;
+#endif
 #include <iomanip>
 #include <math.h>
 
@@ -481,6 +488,47 @@ void construct_fluid(ComMod& com_mod, const mshType& lM, const SolutionStates& s
 {
   const auto& Ag = solutions.intermediate.get_acceleration();
   const auto& Yg = solutions.intermediate.get_velocity();
+
+#ifdef SV_USE_GPU
+  // Experimental GPU assembly: linear tetrahedra, VMS stabilization, one
+  // fluid domain with constant viscosity, no moving mesh or valves
+  {
+    const auto& eq = com_mod.eq[com_mod.cEq];
+    const auto& fs0 = lM.fs[0];
+    const bool supported = getenv("SV_GPU_ASSEM") && com_mod.cm.np() == 1 && com_mod.nsd == 3 &&
+        lM.eNoN == 4 && lM.nFs == 1 && fs0.lShpF && fs0.nG <= 4 && eq.nDmn == 1 &&
+        eq.dmn[0].phys == consts::EquationType::phys_fluid &&
+        eq.dmn[0].fluid_visc.viscType == consts::FluidViscosityModelType::viscType_Const &&
+        !com_mod.mvMsh && !com_mod.risFlag && !com_mod.urisFlag && com_mod.dof == 4;
+    if (supported) {
+      static bool setup = false;
+      if (!setup) {
+        if (svgpu_fluid_setup(lM.nEl, lM.IEN.data(), com_mod.tnNo, com_mod.x.data(), com_mod.colPtr.size(),
+            com_mod.rowPtr.data(), com_mod.colPtr.data(), fs0.nG, fs0.w.data(), fs0.N.data(),
+            fs0.Nx.data()) != 0) {
+          throw std::runtime_error("svgpu_fluid_setup failed");
+        }
+        setup = true;
+      }
+      const auto& dmn = eq.dmn[0];
+      com_mod.cDmn = 0;
+      auto prop = dmn.prop;
+      double f[3] = {prop[consts::PhysicalPropertyType::f_x], prop[consts::PhysicalPropertyType::f_y],
+          prop[consts::PhysicalPropertyType::f_z]};
+      double t0 = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+      // With the GPU solver, the matrix stays on the device
+      svgpu_val_on_device = getenv("SV_GPU") != nullptr;
+      if (svgpu_fluid_assemble(com_mod.tDof, Ag.data(), Yg.data(), com_mod.Bf.data(),
+          prop[consts::PhysicalPropertyType::fluid_density], dmn.fluid_visc.mu_i, f, com_mod.dt, eq.af, eq.am,
+          eq.gam, prop.at(consts::PhysicalPropertyType::brinkman_inverse_permeability),
+          com_mod.R.data(), svgpu_val_on_device ? nullptr : com_mod.Val.data()) != 0) {
+        throw std::runtime_error("svgpu_fluid_assemble failed");
+      }
+      svgpu_t_assem += std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - t0;
+      return;
+    }
+  }
+#endif
   #define n_debug_construct_fluid
   #ifdef debug_construct_fluid
   DebugMsg dmsg(__func__, com_mod.cm.idcm());

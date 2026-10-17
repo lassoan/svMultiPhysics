@@ -9,6 +9,20 @@
 #include "ns_solver.h"
 #include "precond.h"
 
+#ifdef SV_USE_GPU
+#include "svgpu.h"
+#include <chrono>
+#include <cstdlib>
+double svgpu_t_pre = 0.0, svgpu_t_solve = 0.0, svgpu_t_post = 0.0, svgpu_t_assem = 0.0;
+// The matrix is assembled on the GPU and stays there; matrix entries assembled
+// on the host (face terms) are staged and added to the device matrix
+bool svgpu_val_on_device = false;
+std::vector<int> svgpu_stage_ptr;
+std::vector<double> svgpu_stage_val;
+int svgpu_n_solve = 0;
+static double svgpu_now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+#endif
+
 namespace fsi_linear_solver {
 
 /// @brief In this routine, the appropriate LS algorithm is called and
@@ -34,6 +48,9 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
   const int nNo = lhs.nNo;
   const int nnz = lhs.nnz;
   const int nFaces = lhs.nFaces;
+#ifdef SV_USE_GPU
+  double t_start = svgpu_now();
+#endif
   #ifdef debug_fsils_solve
   dmsg << "nNo: " << nNo;
   dmsg << "nnz: " << nnz;
@@ -97,6 +114,40 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
   // Modifies Val and R.
   //
 
+#ifdef SV_USE_GPU
+  if (svgpu_val_on_device) {
+    if (prec != PreconditionerType::PREC_FSILS || dof != 4) {
+      throw std::runtime_error("svgpu: the device resident matrix requires the FSILS preconditioner");
+    }
+    if (svgpu_add_val((int)svgpu_stage_ptr.size(), svgpu_stage_ptr.data(), svgpu_stage_val.data()) != 0) {
+      throw std::runtime_error("svgpu_add_val failed");
+    }
+    svgpu_stage_ptr.clear();
+    svgpu_stage_val.clear();
+    // Dirichlet factors of precond_diag
+    Array<double> Dmul(dof, nNo);
+    Dmul = 1.0;
+    for (auto& face : lhs.face) {
+      if (!face.incFlag || face.bGrp != BcType::BC_TYPE_Dir) continue;
+      int n = std::min(face.dof, dof);
+      for (int a = 0; a < face.nNo; a++) {
+        for (int i = 0; i < n; i++) Dmul(i, face.glob(a)) *= face.val(i, a);
+      }
+    }
+    if (svgpu_precond_diag(nNo, nnz, lhs.rowPtr.data(), lhs.colPtr.data(), lhs.diagPtr.data(), Dmul.data(),
+        Wc.data()) != 0) {
+      throw std::runtime_error("svgpu_precond_diag failed");
+    }
+    for (int i = 0; i < R.size(); i++) R(i) = Wc(i) * R(i);
+    for (auto& face : lhs.face) {
+      if (!face.coupledFlag) continue;
+      if (face.has_cap) throw std::runtime_error("svgpu: faces with caps are not supported");
+      for (int a = 0; a < face.nNo; a++) {
+        for (int i = 0; i < std::min(face.dof, dof); i++) face.valM(i, a) = face.val(i, a) * Wc(i, face.glob(a));
+      }
+    }
+  } else
+#endif
   if (prec == PreconditionerType::PREC_FSILS) {
     precond::precond_diag(lhs, lhs.rowPtr, lhs.colPtr, lhs.diagPtr, dof, Val, R, Wc);
   } else if (prec == PreconditionerType::PREC_RCS) {
@@ -107,10 +158,41 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
 
   // Solve for 'R'.
   //
+#ifdef SV_USE_GPU
+  double t_pre = svgpu_now();
+  svgpu_t_pre += t_pre - t_start;
+#endif
   switch (ls.LS_type) {
-    case LinearSolverType::LS_TYPE_NS:
+    case LinearSolverType::LS_TYPE_NS: {
+#ifdef SV_USE_GPU
+      if (getenv("SV_GPU") && lhs.commu.nTasks == 1) {
+        // GPU NS solver (experimental)
+        std::vector<svgpu_face> faces;
+        for (auto& face : lhs.face) {
+          if (face.coupledFlag) {
+            if (face.has_cap) throw std::runtime_error("svgpu: faces with caps are not supported");
+            faces.push_back({face.nNo, face.glob.data(), face.valM.data(), face.res});
+          }
+        }
+        auto sub = [](const FSILS_subLsType& s) { return svgpu_sub_params{s.mItr, s.sD, s.absTol, s.relTol}; };
+        svgpu_params params{sub(ls.RI), sub(ls.GM), sub(ls.CG)};
+        svgpu_stats st{};
+        if (svgpu_ns_solve(nNo, nnz, dof, lhs.rowPtr.data(), lhs.colPtr.data(),
+            svgpu_val_on_device ? nullptr : Val.data(), R.data(),
+            (int)faces.size(), faces.data(), &params, &st) != 0) {
+          throw std::runtime_error("svgpu_ns_solve failed");
+        }
+        ls.RI.itr = st.RI_itr; ls.GM.itr = st.GM_itr; ls.CG.itr = st.CG_itr;
+        ls.RI.success = st.success != 0; ls.RI.iNorm = st.iNorm; ls.RI.fNorm = st.fNorm;
+        ls.RI.dB = st.dB; ls.Resm = st.Resm; ls.Resc = st.Resc; ls.RI.callD = st.time;
+        if (getenv("SV_LS_STATS")) {
+          printf("LSSTATS-GPU RI.itr=%d GM.itr=%d CG.itr=%d time=%g\n", st.RI_itr, st.GM_itr, st.CG_itr, st.time);
+        }
+        break;
+      }
+#endif
       ns_solver::ns_solver(lhs, ls, dof, Val, R);
-    break;
+    } break;
 
     case LinearSolverType::LS_TYPE_GMRES:
       if (dof == 1) {
@@ -154,6 +236,10 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
 
   // Element-wise multiplication.
   //
+#ifdef SV_USE_GPU
+  double t_solved = svgpu_now();
+  svgpu_t_solve += t_solved - t_pre;
+#endif
   for (int i = 0; i < Wc.size(); i++) {
     R(i) = Wc(i) * R(i);
   }
@@ -163,6 +249,13 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
       Ri(i,a) = R(i,lhs.map(a));
     }
   }
+#ifdef SV_USE_GPU
+  svgpu_t_post += svgpu_now() - t_solved;
+  if (getenv("SV_GPU_TIMING") && ++svgpu_n_solve % 10 == 0) {
+    printf("SV_GPU_TIMING per solve: assembly %.4f precond+copy %.4f solve %.4f post %.4f\n", svgpu_t_assem / svgpu_n_solve,
+        svgpu_t_pre / svgpu_n_solve, svgpu_t_solve / svgpu_n_solve, svgpu_t_post / svgpu_n_solve);
+  }
+#endif
 }
 
 };

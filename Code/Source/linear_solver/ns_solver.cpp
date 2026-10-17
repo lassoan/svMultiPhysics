@@ -439,6 +439,10 @@ void ns_solver(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS_l
       ? 5.0 * log(ls.RI.fNorm / ls.RI.dB) : 0.0;
 
   ls.RI.fNorm = sqrt(ls.RI.fNorm);
+  if (getenv("SV_LS_STATS")) {
+    printf("LSSTATS RI.itr=%d GM.itr=%d CG.itr=%d time=%g nNo=%d nnz=%d\n", ls.RI.itr, ls.GM.itr, ls.CG.itr,
+        ls.RI.callD, nNo, nnz);
+  }
   #ifdef debug_ns_solver
   dmsg << "ls.RI.callD: " << ls.RI.callD;
   dmsg << "ls.RI.dB: " << ls.RI.dB;
