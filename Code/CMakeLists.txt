@@ -105,6 +105,20 @@ if(WIN32)
     add_compile_definitions(__thread=__declspec\(thread\))
   endif()
 endif()
+
+# AVX2 and FMA instructions make svMultiPhysics faster, but the executable then
+# requires a CPU that supports them (most x86-64 CPUs since 2013-2015)
+set(SV_ENABLE_AVX2 OFF CACHE BOOL "Compile with AVX2 and FMA instructions")
+if(SV_ENABLE_AVX2)
+  if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/arch:AVX2>)
+  else()
+    # Without fused multiply-add contraction the results differ from those
+    # without AVX2 only by round-off
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-mavx2> $<$<COMPILE_LANGUAGE:C,CXX>:-mfma>
+      $<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=off>)
+  endif()
+endif()
 include(SimVascularThirdParty)
 #-----------------------------------------------------------------------------
 

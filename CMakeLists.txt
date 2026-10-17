@@ -92,6 +92,7 @@ if(CMAKE_GENERATOR MATCHES "^Visual Studio" AND NOT CMAKE_GENERATOR_TOOLSET)
   endif()
 endif()
 set(SV_GENERATOR_TOOLSET "${_default_toolset}" CACHE STRING "Visual Studio toolset for building svMultiPhysics (for example ClangCL), empty for the default toolset")
+set(SV_ENABLE_AVX2 OFF CACHE BOOL "Compile svMultiPhysics with AVX2 and FMA instructions (faster, but requires a CPU that supports them)")
 
 #-----------------------------------------------------------------------------
 # RPATH handling
@@ -231,6 +232,7 @@ set(SV_COMMON_CMAKE_CACHE_ARGS
     -DENABLE_COVERAGE:BOOL=${ENABLE_COVERAGE}
     -DENABLE_UNIT_TEST:BOOL=${ENABLE_UNIT_TEST}
     -DENABLE_ARRAY_INDEX_CHECKING:BOOL=${ENABLE_ARRAY_INDEX_CHECKING}
+    -DSV_ENABLE_AVX2:BOOL=${SV_ENABLE_AVX2}
     -DSV_LOCAL_VTK_PATH:STRING=${SV_LOCAL_VTK_PATH_VALUE}
     ${SV_DEPENDENCIES_CMAKE_ARGS}
     ${SV_APPLE_CMAKE_ARGS}
