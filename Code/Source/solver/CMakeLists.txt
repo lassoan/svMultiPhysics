@@ -351,6 +351,23 @@ simvascular_add_executable(${SV_MULTIPHYSICS_EXE}
   INSTALL_COMP CoreExecutables
   INSTALL_DESTINATION ${SV_INSTALL_RUNTIME_DIR})
 
+# Use the mimalloc memory allocator instead of the default malloc/free
+# (much faster for the many small arrays allocated by svMultiPhysics on Windows).
+# It is linked before the other libraries so that it is loaded first.
+set(SV_USE_MIMALLOC OFF CACHE BOOL "Use the mimalloc memory allocator")
+if(SV_USE_MIMALLOC)
+  find_package(mimalloc CONFIG REQUIRED)
+  target_link_libraries(${SV_MULTIPHYSICS_EXE} mimalloc)
+  if(MSVC)
+    # Load mimalloc.dll (it redirects malloc/free of the C runtime with
+    # mimalloc-redirect.dll) and copy the DLLs next to the executable
+    target_link_options(${SV_MULTIPHYSICS_EXE} PRIVATE /INCLUDE:mi_version)
+    add_custom_command(TARGET ${SV_MULTIPHYSICS_EXE} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:mimalloc>
+        $<TARGET_FILE_DIR:mimalloc>/mimalloc-redirect.dll $<TARGET_FILE_DIR:${SV_MULTIPHYSICS_EXE}>)
+  endif()
+endif()
+
 target_link_libraries(${SV_MULTIPHYSICS_EXE}
   ${SVMP_ARCHITECTURE_TARGETS}
   ${GLOBAL_LIBRARIES}

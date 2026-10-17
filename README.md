@@ -219,6 +219,7 @@ The top-level `CMakeLists.txt` is a superbuild: it first builds the `Externals` 
 | `MUMPS` | 5.9.1 | Source package, built by PETSc |
 | `PETSc` | 3.26.0 | With the external packages of the Docker image |
 | `svZeroDSolver` | 3.2 | Built in the `svZeroDSolver` directory of the source tree, where the svZeroD test cases expect it |
+| `mimalloc` | 2.2.4 | Memory allocator, used by svMultiPhysics instead of the default `malloc`/`free` (recommended on Windows, where it makes simulations about 5% faster) |
 
 The versions and build options follow the [Docker image](Docker/ubuntu/dockerfile). On Windows, patches for MSVC and LLVM Flang (in `Externals/Patches`) are applied to Trilinos, SuperLU_DIST and MUMPS. On Linux and macOS, an MPI implementation and C, C++ and Fortran compilers must be installed; PETSc downloads and builds its external packages itself.
 
@@ -244,7 +245,8 @@ cmake ..\svMultiPhysics -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Rel
   -DSV_EXTERNALS_ENABLE_HDF5=ON -DSV_EXTERNALS_ENABLE_HYPRE=ON -DSV_EXTERNALS_ENABLE_Trilinos=ON ^
   -DSV_EXTERNALS_ENABLE_METIS=ON -DSV_EXTERNALS_ENABLE_ParMETIS=ON -DSV_EXTERNALS_ENABLE_SuiteSparse=ON ^
   -DSV_EXTERNALS_ENABLE_SuperLU_DIST=ON -DSV_EXTERNALS_ENABLE_ScaLAPACK=ON -DSV_EXTERNALS_ENABLE_Eigen=ON ^
-  -DSV_EXTERNALS_ENABLE_MUMPS=ON -DSV_EXTERNALS_ENABLE_PETSc=ON -DSV_EXTERNALS_ENABLE_svZeroDSolver=ON
+  -DSV_EXTERNALS_ENABLE_MUMPS=ON -DSV_EXTERNALS_ENABLE_PETSc=ON -DSV_EXTERNALS_ENABLE_svZeroDSolver=ON ^
+  -DSV_EXTERNALS_ENABLE_mimalloc=ON
 cmake --build . --config Release
 ```
 Set the `CMAKE_BUILD_PARALLEL_LEVEL` environment variable (e.g. `set CMAKE_BUILD_PARALLEL_LEVEL=8`) before building to build in parallel; it also applies to the builds of the dependencies. PETSc on Windows requires all the dependencies listed in this command. For a build without PETSc, the `Flang`, `Cygwin`, `METIS`, `ParMETIS`, `SuiteSparse`, `SuperLU_DIST`, `ScaLAPACK`, `Eigen` and `MUMPS` options can be omitted.

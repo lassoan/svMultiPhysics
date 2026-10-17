@@ -30,6 +30,7 @@ set(SV_EXTERNALS_DEPENDENCIES
   MUMPS       # source package, built by PETSc
   PETSc
   svZeroDSolver
+  mimalloc    # memory allocator (faster than the default allocator on Windows)
   )
 
 set(SV_EXTERNALS_INSTALL_DIR "${CMAKE_BINARY_DIR}/Externals-install" CACHE PATH
@@ -118,6 +119,10 @@ set(SV_EXTERNALS_svZeroDSolver_GIT_URL "https://github.com/SimVascular/svZeroDSo
 set(SV_EXTERNALS_svZeroDSolver_GIT_TAG "v3.2")
 # The test cases expect svZeroDSolver in the source tree (as in the CI)
 set(SV_EXTERNALS_svZeroDSolver_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../svZeroDSolver")
+
+set(SV_EXTERNALS_mimalloc_VERSION "2.2.4")
+set(SV_EXTERNALS_mimalloc_URL "https://github.com/microsoft/mimalloc/archive/refs/tags/v2.2.4.tar.gz")
+set(SV_EXTERNALS_mimalloc_SHA256 "754a98de5e2912fddbeaf24830f982b4540992f1bab4a0a8796ee118e0752bda")
 
 #-----------------------------------------------------------------------------
 # Locations of the built dependencies
