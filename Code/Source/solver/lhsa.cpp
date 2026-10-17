@@ -77,14 +77,29 @@ void do_assem(ComMod& com_mod, const int d, const Vector<int>& eqN, const Array3
   //std::cout << "[lhs::do_assem] R.size(): " << R.size() << std::endl;
   //std::cout << "[lhs::do_assem] Val.size(): " << Val.size() << std::endl;
 
+  // Access the array data through local pointers. Otherwise compilers that do
+  // not use type-based alias analysis (MSVC) reload the data pointers and sizes
+  // of all arrays from memory after each store to R or Val.
+  const int R_nrows = R.nrows();
+  const int Val_nrows = Val.nrows();
+  const int lR_nrows = lR.nrows();
+  const int lK_nrows = lK.nrows();
+  const int lK_slice_size = lK.nrows() * lK.ncols();
+  double* R_data = R.data();
+  double* Val_data = Val.data();
+  const double* lR_data = lR.data();
+  const double* lK_data = lK.data();
+  const int* rowPtr_data = rowPtr.data();
+  const int* colPtr_data = colPtr.data();
+
   for (int a = 0; a < d; a++) {
     int rowN = eqN(a);
     if (rowN == -1) {
       continue;
     }
 
-    for (int i = 0; i < R.nrows(); i++) {
-      R(i,rowN) = R(i,rowN) + lR(i,a);
+    for (int i = 0; i < R_nrows; i++) {
+      R_data[i + rowN*R_nrows] = R_data[i + rowN*R_nrows] + lR_data[i + a*lR_nrows];
     }
 
     for (int b = 0; b < d; b++) {
@@ -93,21 +108,22 @@ void do_assem(ComMod& com_mod, const int d, const Vector<int>& eqN, const Array3
         continue;
       }
 
-      int left = rowPtr(rowN);
-      int right = rowPtr(rowN+1);
+      int left = rowPtr_data[rowN];
+      int right = rowPtr_data[rowN+1];
       int ptr = (right + left) / 2;
 
-      while (colN != colPtr(ptr)) {
-        if (colN > colPtr(ptr)) { 
+      while (colN != colPtr_data[ptr]) {
+        if (colN > colPtr_data[ptr]) {
           left  = ptr;
-        } else { 
+        } else {
           right = ptr;
         }
         ptr = (right + left) / 2;
       }
 
-      for (int i = 0; i < Val.nrows(); i++) {
-        Val(i,ptr) = Val(i,ptr) + lK(i,a,b);
+      const double* lK_ab = lK_data + a*lK_nrows + b*lK_slice_size;
+      for (int i = 0; i < Val_nrows; i++) {
+        Val_data[i + ptr*Val_nrows] = Val_data[i + ptr*Val_nrows] + lK_ab[i];
       }
     }
   }
