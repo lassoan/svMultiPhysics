@@ -23,9 +23,11 @@ void fsils_spar_mul_ss(FSILS_lhsType& lhs, const Array<int>& rowPtr, const Vecto
   KU = 0.0;
 
   for (int i = 0; i < nNo; i++) {
+    double s = 0.0;
     for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
-      KU(i) = KU(i) + K(j) * U(colPtr(j));
+      s = s + K(j) * U(colPtr(j));
     } 
+    KU(i) = s;
   }
 
   fsils_commus(lhs, KU);
@@ -43,43 +45,57 @@ void fsils_spar_mul_sv(FSILS_lhsType& lhs, const Array<int>& rowPtr, const Vecto
 
     case 1:
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
-          KU(0,i) = KU(0,i) + K(0,j)*U(colPtr(j));
+          s0 = s0 + K(0,j)*U(colPtr(j));
         }
+        KU(0,i) = s0;
       }
     break; 
 
     case 2: {
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0, s1 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(0,i) = KU(0,i) + K(0,j)*U(col);
-          KU(1,i) = KU(1,i) + K(1,j)*U(col);
+          s0 = s0 + K(0,j)*U(col);
+          s1 = s1 + K(1,j)*U(col);
         }
+        KU(0,i) = s0;
+        KU(1,i) = s1;
       }
 
     } break; 
 
     case 3: {
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0, s1 = 0.0, s2 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(0,i) += K(0,j) * U(col);
-          KU(1,i) += K(1,j) * U(col);
-          KU(2,i) += K(2,j) * U(col);
+          s0 += K(0,j) * U(col);
+          s1 += K(1,j) * U(col);
+          s2 += K(2,j) * U(col);
         }
+        KU(0,i) = s0;
+        KU(1,i) = s1;
+        KU(2,i) = s2;
       }
     } break; 
 
     case 4:
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(0,i) = KU(0,i) + K(0,j)*U(col);
-          KU(1,i) = KU(1,i) + K(1,j)*U(col);
-          KU(2,i) = KU(2,i) + K(2,j)*U(col);
-          KU(3,i) = KU(3,i) + K(3,j)*U(col);
+          s0 = s0 + K(0,j)*U(col);
+          s1 = s1 + K(1,j)*U(col);
+          s2 = s2 + K(2,j)*U(col);
+          s3 = s3 + K(3,j)*U(col);
         }
+        KU(0,i) = s0;
+        KU(1,i) = s1;
+        KU(2,i) = s2;
+        KU(3,i) = s3;
       }
     break; 
 
@@ -109,50 +125,60 @@ void fsils_spar_mul_vs(FSILS_lhsType& lhs, const Array<int>& rowPtr, const Vecto
 
     case 1:
       for (int i = 0; i < nNo; i++) {
+        double s = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
-          KU(i) = KU(i) + K(0,j) * U(0,colPtr(j));
+          s = s + K(0,j) * U(0,colPtr(j));
         }
+        KU(i) = s;
       }
     break; 
 
     case 2:
       for (int i = 0; i < nNo; i++) {
+        double s = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(i) = KU(i) + K(0,j)*U(0,col) + K(1,j)*U(1,col);
+          s = s + K(0,j)*U(0,col) + K(1,j)*U(1,col);
         }
+        KU(i) = s;
       }
     break; 
 
     case 3:
       for (int i = 0; i < nNo; i++) {
+        double s = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(i) = KU(i) + K(0,j)*U(0,col) + K(1,j)*U(1,col) + K(2,j)*U(2,col);
+          s = s + K(0,j)*U(0,col) + K(1,j)*U(1,col) + K(2,j)*U(2,col);
         }
+        KU(i) = s;
       }
     break; 
 
     case 4:
       for (int i = 0; i < nNo; i++) {
+        double s = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(i) = KU(i) + K(0,j)*U(0,col) + K(1,j)*U(1,col) + K(2,j)*U(2,col) + K(3,j)*U(3,col);
+          s = s + K(0,j)*U(0,col) + K(1,j)*U(1,col) + K(2,j)*U(2,col) + K(3,j)*U(3,col);
         }
+        KU(i) = s;
       }
     break; 
 
     default: 
       for (int i = 0; i < nNo; i++) {
+        double s = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
           double sum = 0.0;
           for (int m = 0; m < K.nrows(); m++) {
             sum += K(m,j) * U(m,col);
           }
-          KU(i) = KU(i) + sum; 
+          s = s + sum; 
           //KU(i) = KU(i) + SUM(K(:,j)*U(:,colPtr(j)))
         }
+        KU(i) = s;
      }
   } 
 
@@ -171,42 +197,56 @@ void fsils_spar_mul_vv(FSILS_lhsType& lhs, const Array<int>& rowPtr, const Vecto
 
     case 1:
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
-          KU(0,i) = KU(0,i) + K(0,j)*U(0,colPtr(j));
+          s0 = s0 + K(0,j)*U(0,colPtr(j));
         }
+        KU(0,i) = s0;
       }
     break;
 
     case 2:
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0, s1 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(0,i) = KU(0,i) + K(0,j)*U(0,col) + K(1,j)*U(1,col);
-          KU(1,i) = KU(1,i) + K(2,j)*U(0,col) + K(3,j)*U(1,col);
+          s0 = s0 + K(0,j)*U(0,col) + K(1,j)*U(1,col);
+          s1 = s1 + K(2,j)*U(0,col) + K(3,j)*U(1,col);
         }
+        KU(0,i) = s0;
+        KU(1,i) = s1;
       }
     break;
 
     case 3:
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0, s1 = 0.0, s2 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(0,i) = KU(0,i) + K(0,j)*U(0,col) + K(1,j)*U(1,col) + K(2,j)*U(2,col);
-          KU(1,i) = KU(1,i) + K(3,j)*U(0,col) + K(4,j)*U(1,col) + K(5,j)*U(2,col);
-          KU(2,i) = KU(2,i) + K(6,j)*U(0,col) + K(7,j)*U(1,col) + K(8,j)*U(2,col);
+          s0 = s0 + K(0,j)*U(0,col) + K(1,j)*U(1,col) + K(2,j)*U(2,col);
+          s1 = s1 + K(3,j)*U(0,col) + K(4,j)*U(1,col) + K(5,j)*U(2,col);
+          s2 = s2 + K(6,j)*U(0,col) + K(7,j)*U(1,col) + K(8,j)*U(2,col);
         }
+        KU(0,i) = s0;
+        KU(1,i) = s1;
+        KU(2,i) = s2;
       }
     break;
 
     case 4:
       for (int i = 0; i < nNo; i++) {
+        double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
         for (int j = rowPtr(0,i); j <= rowPtr(1,i); j++) {
           int col = colPtr(j);
-          KU(0,i) = KU(0,i) + K(0 ,j)*U(0,col) + K(1 ,j)*U(1,col) + K(2 ,j)*U(2,col) + K(3 ,j)*U(3,col);
-          KU(1,i) = KU(1,i) + K(4 ,j)*U(0,col) + K(5 ,j)*U(1,col) + K(6 ,j)*U(2,col) + K(7 ,j)*U(3,col);
-          KU(2,i) = KU(2,i) + K(8 ,j)*U(0,col) + K(9,j)*U(1,col) + K(10,j)*U(2,col) + K(11,j)*U(3,col);
-          KU(3,i) = KU(3,i) + K(12,j)*U(0,col) + K(13,j)*U(1,col) + K(14,j)*U(2,col) + K(15,j)*U(3,col);
+          s0 = s0 + K(0 ,j)*U(0,col) + K(1 ,j)*U(1,col) + K(2 ,j)*U(2,col) + K(3 ,j)*U(3,col);
+          s1 = s1 + K(4 ,j)*U(0,col) + K(5 ,j)*U(1,col) + K(6 ,j)*U(2,col) + K(7 ,j)*U(3,col);
+          s2 = s2 + K(8 ,j)*U(0,col) + K(9,j)*U(1,col) + K(10,j)*U(2,col) + K(11,j)*U(3,col);
+          s3 = s3 + K(12,j)*U(0,col) + K(13,j)*U(1,col) + K(14,j)*U(2,col) + K(15,j)*U(3,col);
         }
+        KU(0,i) = s0;
+        KU(1,i) = s1;
+        KU(2,i) = s2;
+        KU(3,i) = s3;
       }
     break;
 
