@@ -76,7 +76,7 @@ void FsilsLinearAlgebra::assemble(ComMod& com_mod, const int num_elem_nodes, con
           ptr = (right + left) / 2;
         }
         svgpu_stage_ptr.push_back(ptr);
-        for (int i = 0; i < 16; i++) svgpu_stage_val.push_back(lK(i,a,b));
+        for (int i = 0; i < com_mod.dof * com_mod.dof; i++) svgpu_stage_val.push_back(lK(i,a,b));
       }
     }
     return;

@@ -25,7 +25,7 @@ for name in ('fluid_3d_c', 'fluid_3d_m'):
     b = b.replace('dmn.prop[PhysicalPropertyType::f_y]', 'prm.f[1]')
     b = b.replace('dmn.prop[PhysicalPropertyType::f_z]', 'prm.f[2]')
     b = b.replace('eq.af', 'prm.af').replace('eq.gam', 'prm.gam').replace('eq.am', 'prm.am')
-    b = b.replace('com_mod.mvMsh', 'false')
+    b = b.replace('com_mod.mvMsh', 'prm.mvMsh')
     b = re.sub(r'(fluid::)?get_viscosity\(com_mod, dmn, gam, mu, mu_s, mu_g\);', 'mu = prm.mu; mu_s = mu; mu_g = 0.0;', b)
     b = b.replace('utils::is_zero(', 'is_zero(')
     b = b.replace('std::numeric_limits<double>::epsilon()', 'DBL_EPSILON')
@@ -39,7 +39,7 @@ for name in ('fluid_3d_c', 'fluid_3d_m'):
     assert 'com_mod' not in b and 'std::' not in b and 'dmn' not in b, name
     out.append('__device__ void d_%s(const FluidParams& prm, const int vmsFlag, const int eNoNw, const int eNoNq, const double w,\n'
                '    const double Kxi_[3][3], const double* Nw_, const double* Nq_, const double Nwx_[3][4],\n'
-               '    const double Nqx_[3][4], const double Nwxx_[6][4], const double al_[4][4], const double yl_[4][4],\n'
+               '    const double Nqx_[3][4], const double Nwxx_[6][4], const double al_[8][4], const double yl_[8][4],\n'
                '    const double bfl_[3][4], double lR_[4][4], double lK_[16][4][4], double brinkman_inverse_permeability,\n'
                '    const double urisFactorTotal, const double* urisValveVelTermTotal)\n{' % name + b + '}\n')
 open(sys.argv[2], 'w').write('\n'.join(out))

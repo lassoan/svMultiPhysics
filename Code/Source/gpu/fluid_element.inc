@@ -1,6 +1,6 @@
 __device__ void d_fluid_3d_c(const FluidParams& prm, const int vmsFlag, const int eNoNw, const int eNoNq, const double w,
     const double Kxi_[3][3], const double* Nw_, const double* Nq_, const double Nwx_[3][4],
-    const double Nqx_[3][4], const double Nwxx_[6][4], const double al_[4][4], const double yl_[4][4],
+    const double Nqx_[3][4], const double Nwxx_[6][4], const double al_[8][4], const double yl_[8][4],
     const double bfl_[3][4], double lR_[4][4], double lK_[16][4][4], double brinkman_inverse_permeability,
     const double urisFactorTotal, const double* urisValveVelTermTotal)
 {
@@ -104,7 +104,7 @@ __device__ void d_fluid_3d_c(const FluidParams& prm, const int vmsFlag, const in
 
   // Update convection velocity relative to mesh velocity
   //
-  if (false) {
+  if (prm.mvMsh) {
     for (int a = 0; a < eNoNw; a++) {
       u[0] = u[0] - Nw(a)*yl(4,a);
       u[1] = u[1] - Nw(a)*yl(5,a);
@@ -303,7 +303,7 @@ __device__ void d_fluid_3d_c(const FluidParams& prm, const int vmsFlag, const in
 
 __device__ void d_fluid_3d_m(const FluidParams& prm, const int vmsFlag, const int eNoNw, const int eNoNq, const double w,
     const double Kxi_[3][3], const double* Nw_, const double* Nq_, const double Nwx_[3][4],
-    const double Nqx_[3][4], const double Nwxx_[6][4], const double al_[4][4], const double yl_[4][4],
+    const double Nqx_[3][4], const double Nwxx_[6][4], const double al_[8][4], const double yl_[8][4],
     const double bfl_[3][4], double lR_[4][4], double lK_[16][4][4], double brinkman_inverse_permeability,
     const double urisFactorTotal, const double* urisValveVelTermTotal)
 {
@@ -411,7 +411,7 @@ __device__ void d_fluid_3d_m(const FluidParams& prm, const int vmsFlag, const in
   
   // Update convection velocity relative to mesh velocity
   //
-  if (false) {
+  if (prm.mvMsh) {
     for (int a = 0; a < eNoNw; a++) {
       u[0] = u[0] - Nw(a)*yl(4,a);
       u[1] = u[1] - Nw(a)*yl(5,a);

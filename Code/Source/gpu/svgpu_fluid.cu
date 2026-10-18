@@ -26,6 +26,7 @@ namespace {
 
 struct FluidParams {
   double rho, mu, f[3], dt, af, am, gam, brink;
+  int mvMsh;
 };
 
 struct GaussData {
@@ -134,7 +135,7 @@ __global__ void k_fluid(int nEl, const int* IEN, const double* x, int tDof, cons
   int e = blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= nEl) return;
 
-  double xl[3][4], al[4][4], yl[4][4], bfl[3][4];
+  double xl[3][4], al[8][4] = {}, yl[8][4] = {}, bfl[3][4];
   for (int a = 0; a < 4; a++) {
     int Ac = IEN[4 * e + a];
     for (int i = 0; i < 3; i++) {
@@ -289,7 +290,7 @@ extern "C" SVGPU_API int svgpu_fluid_assemble(int tDof, const double* Ag, const 
     CUDA_CHECK(cudaMemcpy(fl->Bf, Bf, 3 * (size_t)fl->tnNo * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(fl->R, 0, 4 * (size_t)fl->tnNo * sizeof(double)));
     CUDA_CHECK(cudaMemset(fl->Val, 0, 16 * (size_t)fl->nnz * sizeof(double)));
-    FluidParams prm{rho, mu, {f[0], f[1], f[2]}, dt, af, am, gam, brink};
+    FluidParams prm{rho, mu, {f[0], f[1], f[2]}, dt, af, am, gam, brink, 0};
     k_fluid<<<(fl->nEl + 127) / 128, 128>>>(fl->nEl, fl->IEN, fl->x, tDof, fl->Ag, fl->Yg, fl->Bf, prm, fl->gd,
         fl->ePtr, fl->R, fl->Val);
     CUDA_CHECK(cudaGetLastError());

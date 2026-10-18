@@ -116,10 +116,10 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
 
 #ifdef SV_USE_GPU
   if (svgpu_val_on_device) {
-    if (prec != PreconditionerType::PREC_FSILS || dof != 4) {
+    if (prec != PreconditionerType::PREC_FSILS || (dof != 3 && dof != 4)) {
       throw std::runtime_error("svgpu: the device resident matrix requires the FSILS preconditioner");
     }
-    if (svgpu_add_val((int)svgpu_stage_ptr.size(), svgpu_stage_ptr.data(), svgpu_stage_val.data()) != 0) {
+    if (svgpu_add_val_dof((int)svgpu_stage_ptr.size(), dof, svgpu_stage_ptr.data(), svgpu_stage_val.data()) != 0) {
       throw std::runtime_error("svgpu_add_val failed");
     }
     svgpu_stage_ptr.clear();
@@ -134,8 +134,8 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
         for (int i = 0; i < n; i++) Dmul(i, face.glob(a)) *= face.val(i, a);
       }
     }
-    if (svgpu_precond_diag(nNo, nnz, lhs.rowPtr.data(), lhs.colPtr.data(), lhs.diagPtr.data(), Dmul.data(),
-        Wc.data()) != 0) {
+    if (svgpu_precond_diag_dof(nNo, nnz, dof, lhs.rowPtr.data(), lhs.colPtr.data(), lhs.diagPtr.data(),
+        Dmul.data(), Wc.data()) != 0) {
       throw std::runtime_error("svgpu_precond_diag failed");
     }
     for (int i = 0; i < R.size(); i++) R(i) = Wc(i) * R(i);
@@ -161,6 +161,29 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
 #ifdef SV_USE_GPU
   double t_pre = svgpu_now();
   svgpu_t_pre += t_pre - t_start;
+#endif
+#ifdef SV_USE_GPU
+  // GMRES and CG on the device resident matrix (no coupled faces)
+  if (svgpu_val_on_device && (ls.LS_type == LinearSolverType::LS_TYPE_GMRES ||
+      ls.LS_type == LinearSolverType::LS_TYPE_CG)) {
+    for (auto& face : lhs.face) {
+      if (face.coupledFlag) throw std::runtime_error("svgpu: coupled faces are not supported with GMRES and CG");
+    }
+    svgpu_stats st{};
+    int type = (ls.LS_type == LinearSolverType::LS_TYPE_GMRES) ? 0 : 1;
+    if (svgpu_ls_solve(type, nNo, nnz, dof, ls.RI.mItr, ls.RI.sD, ls.RI.absTol, ls.RI.relTol, R.data(), &st) != 0) {
+      throw std::runtime_error("svgpu_ls_solve failed");
+    }
+    ls.RI.itr = type == 0 ? st.GM_itr : st.CG_itr;
+    ls.RI.success = st.success != 0;
+    ls.RI.iNorm = st.iNorm;
+    ls.RI.fNorm = st.fNorm;
+    ls.RI.dB = st.dB;
+    ls.RI.callD = st.time;
+    if (getenv("SV_LS_STATS")) {
+      printf("LSSTATS-GPU type=%d dof=%d itr=%d time=%g\n", type, dof, ls.RI.itr, st.time);
+    }
+  } else
 #endif
   switch (ls.LS_type) {
     case LinearSolverType::LS_TYPE_NS: {

@@ -255,6 +255,7 @@ set(CSRCS
   distribute.h distribute.cpp
   eq_assem.h eq_assem.cpp
   fsi.h fsi.cpp
+  svgpu_fsi_host.h svgpu_fsi_host.cpp
   fs.h fs.cpp
   initialize.h initialize.cpp
   Integrator.h Integrator.cpp

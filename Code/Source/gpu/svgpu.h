@@ -79,6 +79,23 @@ SVGPU_API int svgpu_add_val(int n, const int* ptr, const double* vals);
 SVGPU_API int svgpu_precond_diag(int nNo, int nnz, const int* rowPtr, const int* colPtr,
     const int* diagPtr, const double* Dmul, double* W);
 
+/// FSI: global node data and matrix structure (CSR, tnNo+1 and nnz)
+SVGPU_API int svgpu_fsi_setup(int tnNo, const double* x, int nnz, const int* rowPtr, const int* colPtr);
+/// FSI: add a mesh of linear tetrahedra; returns its index
+SVGPU_API int svgpu_fsi_add_mesh(int nEl, const int* IEN, int nG, const double* w, const double* N,
+    const double* Nxi);
+/// FSI: assemble a mesh (type 0: FSI fluid, 1: FSI struct, 2: mesh motion) into the device matrix
+SVGPU_API int svgpu_fsi_assemble(int mesh, int type, int tDof, const double* Ag, const double* Yg,
+    const double* Dg, const double* Do, const double* Bf, const double* params, double* R);
+/// Add staged matrix entries (dof*dof values each) to the device matrix
+SVGPU_API int svgpu_add_val_dof(int n, int dof, const int* ptr, const double* vals);
+/// FSILS diagonal preconditioner of the device matrix
+SVGPU_API int svgpu_precond_diag_dof(int nNo, int nnz, int dof, const int* rowPtr, const int* colPtr,
+    const int* diagPtr, const double* Dmul, double* W);
+/// FSILS GMRES (type 0) or CG (type 1) on the device matrix
+SVGPU_API int svgpu_ls_solve(int type, int nNo, int nnz, int dof, int mItr, int sD, double absTol,
+    double relTol, double* R, svgpu_stats* stats);
+
 #ifdef __cplusplus
 }
 #endif

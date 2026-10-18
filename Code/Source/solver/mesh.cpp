@@ -7,6 +7,9 @@
 #include "consts.h"
 #include "fluid/fluid.h"
 #include "fs.h"
+#ifdef SV_USE_GPU
+#include "svgpu_fsi_host.h"
+#endif
 #include "solid/l_elas.h"
 #include "lhsa.h"
 #include "nn.h"
@@ -24,6 +27,10 @@ void construct_mesh(ComMod& com_mod, CepMod& cep_mod, const mshType& lM, const S
   const auto& Do = solutions.old.get_displacement();
   const auto& Ag = solutions.intermediate.get_acceleration();
   const auto& Dg = solutions.intermediate.get_displacement();
+#ifdef SV_USE_GPU
+  // Experimental GPU assembly
+  if (svgpu_host::construct_mesh(com_mod, lM, solutions)) return;
+#endif
   #define n_debug_construct_mesh 
   #ifdef debug_construct_mesh
   DebugMsg dmsg(__func__, com_mod.cm.idcm());

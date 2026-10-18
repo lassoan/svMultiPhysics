@@ -12,7 +12,7 @@ set(CMAKE_CUDA_STANDARD 17)
 
 find_package(CUDAToolkit REQUIRED)
 
-add_library(svgpu SHARED svgpu_kernels.cu svgpu_ns.cpp svgpu_fluid.cu svgpu_schur.cu svgpu_amg.cu svgpu_gmres.cu svgpu_amg_graph.cu)
+add_library(svgpu SHARED svgpu_kernels.cu svgpu_ns.cpp svgpu_fluid.cu svgpu_schur.cu svgpu_amg.cu svgpu_gmres.cu svgpu_amg_graph.cu svgpu_fsi.cu)
 target_compile_definitions(svgpu PRIVATE SVGPU_EXPORTS)
 target_include_directories(svgpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../ThirdParty/eigen/include/eigen3)
 target_link_libraries(svgpu PRIVATE CUDA::cudart_static)
