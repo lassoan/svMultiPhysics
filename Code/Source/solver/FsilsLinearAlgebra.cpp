@@ -39,6 +39,11 @@ void FsilsLinearAlgebra::alloc(ComMod& com_mod, eqType& lEq)
   #endif
   int dof = com_mod.dof;
 
+#ifdef SV_USE_GPU
+  // The matrix is assembled on the GPU (see assemble): the host matrix is
+  // not used, so do not reallocate and clear it in every Newton iteration
+  if (svgpu_val_on_device && com_mod.Val.size() != 0) return;
+#endif
   com_mod.Val.resize(dof*dof, com_mod.lhs.nnz);
 }
 

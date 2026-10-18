@@ -14,6 +14,7 @@
 
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
+#include <Eigen/QR>
 
 #include <algorithm>
 #include <cfloat>
@@ -532,6 +533,22 @@ __global__ void k_precond_scale(int nnz, int dof, const int* rowOf, const int* c
   Val[q] = Val[q] * W[dof * rowOf[j] + r] * W[dof * col[j] + c];
 }
 
+// Add the sum over the block to *acc (thread 0); the caller synchronizes
+// the grid before the shared memory is used again
+__device__ inline void block_sum_add(double v, double* acc)
+{
+  __shared__ double sh2[TPB / 32];
+  const int warp = threadIdx.x / 32, lane = threadIdx.x % 32;
+  for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+  if (lane == 0) sh2[warp] = v;
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    double x = 0.0;
+    for (int w = 0; w < TPB / 32; w++) x += sh2[w];
+    atomicAdd(acc, x);
+  }
+}
+
 __device__ inline double block_sum(double v)
 {
   __shared__ double sh[TPB / 32];
@@ -577,6 +594,58 @@ __device__ inline void spmv_rows(int nNo, const int* rowS, const int* rowE, cons
   }
 }
 
+// y_i = sum_j K_j x_col(j), one warp per row: the dof x dof blocks of a row
+// are contiguous, so the warp reads them with coalesced loads. Lane l < NL
+// (NL = the largest multiple of dof*dof <= 32) always handles entry
+// e = l % (dof*dof) of a block.
+template <int DOF>
+__device__ inline void spmv_warp(int nNo, const int* rowS, const int* rowE, const int* col, const double* K,
+    const double* x, double* y, int tid, int nth)
+{
+  constexpr int DD = DOF * DOF;
+  constexpr int BPP = 32 / DD;   // blocks per pass
+  constexpr int NL = BPP * DD;
+  const int lane = tid % 32;
+  const int e = lane % DD, b0 = lane / DD, c = e % DOF;
+  const int nw = nth / 32;
+  const int nIt = ((nNo + nw - 1) / nw) * nw;
+  for (int i = tid / 32; i < nIt; i += nw) {
+    double v = 0.0;
+    if (i < nNo && lane < NL) {
+      const int je = rowE[i];
+      // Unrolled for memory level parallelism
+      constexpr int U = 4;
+      for (int j = rowS[i] + b0; j <= je; j += U * BPP) {
+        double kv[U], xv[U];
+#pragma unroll
+        for (int u = 0; u < U; u++) {
+          const int jj = j + u * BPP;
+          kv[u] = 0.0;
+          xv[u] = 0.0;
+          if (jj <= je) {
+            kv[u] = K[DD * (size_t)jj + e];
+            xv[u] = x[DOF * (size_t)col[jj] + c];
+          }
+        }
+#pragma unroll
+        for (int u = 0; u < U; u++) v += kv[u] * xv[u];
+      }
+    }
+    // Sum over the blocks handled by the lanes of the same entry
+    for (int k = 1; k < BPP; k++) {
+      double t = __shfl_down_sync(0xffffffff, v, k * DD);
+      if (b0 == 0) v += t;
+    }
+    // Sum over the columns of the block row
+    double r = v;
+    for (int k = 1; k < DOF; k++) {
+      double t = __shfl_down_sync(0xffffffff, v, k);
+      if (c == 0) r += t;
+    }
+    if (i < nNo && b0 == 0 && c == 0 && lane < DD) y[DOF * (size_t)i + e / DOF] = r;
+  }
+}
+
 // Accumulator slots (rotating, see k_cg_amg2)
 #define NEXT_ACC() (accp = a.acc + (slot % 4) * 64, slot++, \
     (blockIdx.x == 0 && threadIdx.x < 64) ? (a.acc[(slot % 4) * 64 + threadIdx.x] = 0.0) : 0.0, accp)
@@ -586,12 +655,22 @@ struct ArnArgs {
   const int *rowS, *rowE, *col;
   const double* K;
   double *u, *h, *acc;
+  int doSpmv;   // k_arnoldi_reg: w = K u_i in the kernel (else done before)
+  const int* done;  // GMRES converged in this cycle: nothing to do
+};
+
+// State of a GMRES restart cycle on the device (see k_givens)
+struct GmresState {
+  int done, nproc;
+  double* H;    // (sD + 1) x sD
+  double *c, *s, *err;
 };
 
 // One Arnoldi step: w = K u_i, modified Gram-Schmidt, normalization
 template <int DOF>
 __global__ void k_arnoldi(ArnArgs a)
 {
+  if (a.done && __ldcg(a.done)) return;
   cg::grid_group grid = cg::this_grid();
   const int tid = blockIdx.x * blockDim.x + threadIdx.x;
   const int nth = gridDim.x * blockDim.x;
@@ -602,7 +681,7 @@ __global__ void k_arnoldi(ArnArgs a)
   double* accp;
 
   NEXT_ACC();
-  spmv_rows<DOF, 8>(a.nNo, a.rowS, a.rowE, a.col, a.K, ui, w, tid, nth);
+  spmv_warp<DOF>(a.nNo, a.rowS, a.rowE, a.col, a.K, ui, w, tid, nth);
   grid.sync();
   {
     double s = 0.0;
@@ -632,14 +711,96 @@ __global__ void k_arnoldi(ArnArgs a)
   for (size_t q = tid; q < n; q += nth) w[q] = w[q] * (1.0 / nrm);
 }
 
+// k_arnoldi with the entries q = tid + k * nth (k < P) of w in registers and
+// of the current basis vector in shared memory, so that the modified
+// Gram-Schmidt step j reads only u_j+1 from global memory. Same operations in
+// the same order as k_arnoldi.
+template <int DOF, int P>
+__global__ void __launch_bounds__(TPB, 2) k_arnoldi_reg(ArnArgs a)
+{
+  extern __shared__ double cur[];
+  if (a.done && __ldcg(a.done)) return;
+  cg::grid_group grid = cg::this_grid();
+  const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  const int nth = gridDim.x * blockDim.x;
+  const int n = DOF * a.nNo;
+  double* w = a.u + (size_t)(a.i + 1) * n;
+  int slot = 0;
+  double* accp;
+  double wr[P];
+
+  NEXT_ACC();
+  if (a.doSpmv) {
+    spmv_warp<DOF>(a.nNo, a.rowS, a.rowE, a.col, a.K, a.u + (size_t)a.i * n, w, tid, nth);
+    grid.sync();
+  }
+  {
+    double s = 0.0;
+#pragma unroll
+    for (int k = 0; k < P; k++) {
+      const int q = tid + k * nth;
+      wr[k] = 0.0;
+      if (q < n) {
+        wr[k] = w[q];
+        double c = a.u[q];
+        cur[k * TPB + threadIdx.x] = c;
+        s += c * wr[k];
+      }
+    }
+    s = block_sum(s);
+    if (threadIdx.x == 0) atomicAdd(&accp[0], s);
+  }
+  grid.sync();
+  for (int j = 0; j <= a.i; j++) {
+    const double hj = __ldcg(&accp[0]);
+    if (tid == 0) a.h[j] = hj;
+    const double* un = a.u + (size_t)(j + 1) * n;
+    const bool last = (j == a.i);
+    NEXT_ACC();
+    double s = 0.0;
+#pragma unroll
+    for (int k = 0; k < P; k++) {
+      const int q = tid + k * nth;
+      if (q < n) {
+        double wq = wr[k] - hj * cur[k * TPB + threadIdx.x];
+        wr[k] = wq;
+        double nx = last ? wq : un[q];
+        s += nx * wq;
+        cur[k * TPB + threadIdx.x] = nx;
+      }
+    }
+    block_sum_add(s, &accp[0]);
+    grid.sync();
+  }
+  const double nrm = sqrt(__ldcg(&accp[0]));
+  if (tid == 0) a.h[a.i + 1] = nrm;
+#pragma unroll
+  for (int k = 0; k < P; k++) {
+    const int q = tid + k * nth;
+    if (q < n) w[q] = wr[k] * (1.0 / nrm);
+  }
+}
+
+template <int DOF, int P> int arn_reg_blocks()
+{
+  const int smem = P * TPB * sizeof(double);
+  CUDA_CHECK(cudaFuncSetAttribute(k_arnoldi_reg<DOF, P>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+  int dev, nSM, perSM;
+  CUDA_CHECK(cudaGetDevice(&dev));
+  CUDA_CHECK(cudaDeviceGetAttribute(&nSM, cudaDevAttrMultiProcessorCount, dev));
+  CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&perSM, k_arnoldi_reg<DOF, P>, TPB, smem));
+  return nSM * std::min(perSM, 2);
+}
+
 // u0 = R - K X, and |u0|^2 into acc
 template <int DOF>
 __global__ void k_residual(int nNo, const int* rowS, const int* rowE, const int* col, const double* K,
-    const double* R, const double* X, double* u0)
+    const double* R, const double* X, double* u0, const int* done = nullptr)
 {
+  if (done && __ldcg(done)) return;
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   int nth = gridDim.x * blockDim.x;
-  spmv_rows<DOF, 8>(nNo, rowS, rowE, col, K, X, u0, tid, nth);
+  spmv_warp<DOF>(nNo, rowS, rowE, col, K, X, u0, tid, nth);
 }
 
 __global__ void k_sub_vec(size_t n, const double* a, double* b)
@@ -702,12 +863,12 @@ __global__ void k_cg(CgArgs a)
     if (err < a.eps) { success = 1; break; }
     errO = err;
     NEXT_ACC();
+    // The row kernel is faster here (few warps per SM in the cooperative kernel)
     spmv_rows<DOF, 8>(a.nNo, a.rowS, a.rowE, a.col, a.K, a.P, a.Q, tid, nth);
     grid.sync();
     double s = 0.0;
     for (size_t q = tid; q < n; q += nth) s += a.P[q] * a.Q[q];
-    s = block_sum(s);
-    if (threadIdx.x == 0) atomicAdd(&accp[0], s);
+    block_sum_add(s, &accp[0]);
     grid.sync();
     const double alpha = errO / __ldcg(&accp[0]);
     NEXT_ACC();
@@ -718,8 +879,7 @@ __global__ void k_cg(CgArgs a)
       a.R[q] = r;
       rr += r * r;
     }
-    rr = block_sum(rr);
-    if (threadIdx.x == 0) atomicAdd(&accp[0], rr);
+    block_sum_add(rr, &accp[0]);
     grid.sync();
     err = __ldcg(&accp[0]);
     const double c1 = errO / err, c2 = err / errO;
@@ -762,6 +922,35 @@ double now()
   return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+#include "svgpu_fsi_amg.inc"
+
+// Givens rotation of column i of the Hessenberg matrix (h: the new column
+// from k_arnoldi) and the convergence check, as in gmres::gmres_v. Clears the
+// first accumulator slot for the next Arnoldi step.
+__global__ void k_givens(GmresState* g, int i, int sD, double eps, const double* h, double* acc)
+{
+  if (threadIdx.x < 64) acc[threadIdx.x] = 0.0;
+  if (threadIdx.x != 0 || g->done) return;
+  double* H = g->H;
+  double *c = g->c, *s = g->s, *err = g->err;
+  auto Hm = [&](int r, int k) -> double& { return H[r + (size_t)k * (sD + 1)]; };
+  for (int j = 0; j <= i + 1; j++) Hm(j, i) = h[j];
+  for (int j = 0; j <= i - 1; j++) {
+    double tmp = c[j] * Hm(j, i) + s[j] * Hm(j + 1, i);
+    Hm(j + 1, i) = -s[j] * Hm(j, i) + c[j] * Hm(j + 1, i);
+    Hm(j, i) = tmp;
+  }
+  double tmp = sqrt(Hm(i, i) * Hm(i, i) + Hm(i + 1, i) * Hm(i + 1, i));
+  c[i] = Hm(i, i) / tmp;
+  s[i] = Hm(i + 1, i) / tmp;
+  Hm(i, i) = tmp;
+  Hm(i + 1, i) = 0.0;
+  err[i + 1] = -s[i] * err[i];
+  err[i] = c[i] * err[i];
+  g->nproc = i + 1;
+  if (fabs(err[i + 1]) < eps) g->done = 1;
+}
+
 // gmres::gmres_v without coupled faces. R (device, dof*nNo) in, X (device) out
 template <int DOF>
 void gmres_v(int mItr, int sD, double absTol, double relTol, svgpu_stats* stats)
@@ -776,8 +965,56 @@ void gmres_v(int mItr, int sD, double absTol, double relTol, svgpu_stats* stats)
   static int nbArn3 = 0, nbArn4 = 0;
   int& nbArn = (DOF == 3) ? nbArn3 : nbArn4;
   if (!nbArn) nbArn = coop_blocks(k_arnoldi<DOF>);
+  // Arnoldi kernel with w in registers, for the smallest P that holds w
+  using ArnKern = void (*)(ArnArgs);
+  static ArnKern arn = nullptr;
+  static int nbA = 0, smA = 0;
+  static size_t nA = 0;
+  if (nA != n) {
+    nA = n;
+    arn = (ArnKern)k_arnoldi<DOF>;
+    nbA = nbArn;
+    smA = 0;
+    {
+      const ArnKern kr[4] = {k_arnoldi_reg<DOF, 8>, k_arnoldi_reg<DOF, 16>, k_arnoldi_reg<DOF, 22>,
+          k_arnoldi_reg<DOF, 24>};
+      const int nb[4] = {arn_reg_blocks<DOF, 8>(), arn_reg_blocks<DOF, 16>(), arn_reg_blocks<DOF, 22>(),
+          arn_reg_blocks<DOF, 24>()};
+      const int pr[4] = {8, 16, 22, 24};
+      for (int k = 0; k < 4; k++) {
+        if (nb[k] > 0 && (size_t)pr[k] * nb[k] * TPB >= n) {
+          arn = kr[k];
+          nbA = nb[k];
+          smA = pr[k] * TPB * sizeof(double);
+          if (getenv("SV_GPU_VERBOSE")) printf("svgpu: Arnoldi P=%d blocks=%d\n", pr[k], nbA);
+          break;
+        }
+      }
+    }
+  }
   double* u = lhs.u;
   auto uj = [&](int j) { return u + (size_t)j * n; };
+  // AMG right preconditioner (A M^-1 y = R, x = M^-1 y), unless SVGPU_AMG=0
+  static const bool amgEnv = amg_enabled();
+  Amg* am = nullptr;
+  if (amgEnv) {
+    static const bool tAmg = getenv("SVGPU_TIMING") != nullptr;
+    double t0 = 0.0;
+    if (tAmg) { CUDA_CHECK(cudaDeviceSynchronize()); t0 = now(); }
+    am = &amg_get<DOF>();
+    amg_numeric<DOF>(*am);
+    if (tAmg) {
+      CUDA_CHECK(cudaDeviceSynchronize());
+      double t1 = now();
+      for (int k = 0; k < 10; k++) amg_vcycle<DOF>(*am, 0, lhs.R, am->Z, nullptr);
+      amgProf.on = getenv("SVGPU_AMG_PROF") != nullptr;
+      amg_vcycle<DOF>(*am, 0, lhs.R, am->Z, nullptr);
+      amgProf.on = false;
+      CUDA_CHECK(cudaDeviceSynchronize());
+      printf("SVGPU-TIMING amg setup %.2f ms, V-cycle %.3f ms\n", 1e3 * (t1 - t0), 1e2 * (now() - t1));
+    }
+  }
+  const bool fused = !am && arn == (ArnKern)k_arnoldi<DOF>;
   const double* K = svgpu_dev_val_ptr;
   const int nbV = (int)((n + TPB - 1) / TPB);
 
@@ -790,55 +1027,89 @@ void gmres_v(int mItr, int sD, double absTol, double relTol, svgpu_stats* stats)
   if (iNorm <= absTol) {
     success = true;
   } else {
-    std::vector<double> h((size_t)(sD + 1) * sD), y(sD), c(sD), s(sD), err(sD + 1);
+    std::vector<double> h((size_t)(sD + 1) * sD), y(sD), err(sD + 1);
     auto H = [&](int i, int j) -> double& { return h[i + (size_t)j * (sD + 1)]; };
+    // Device GMRES state
+    static GmresState* gDev = nullptr;
+    static double *gH = nullptr, *gC = nullptr, *gS = nullptr, *gErr = nullptr;
+    static int gCap = 0;
+    if (sD > gCap) {
+      if (gDev) { cudaFree(gDev); cudaFree(gH); cudaFree(gC); cudaFree(gS); cudaFree(gErr); }
+      CUDA_CHECK(cudaMalloc(&gDev, sizeof(GmresState)));
+      CUDA_CHECK(cudaMalloc(&gH, (size_t)(sD + 1) * sD * sizeof(double)));
+      CUDA_CHECK(cudaMalloc(&gC, sD * sizeof(double)));
+      CUDA_CHECK(cudaMalloc(&gS, sD * sizeof(double)));
+      CUDA_CHECK(cudaMalloc(&gErr, (sD + 1) * sizeof(double)));
+      GmresState g0{0, 0, gH, gC, gS, gErr};
+      CUDA_CHECK(cudaMemcpy(gDev, &g0, sizeof(g0), cudaMemcpyHostToDevice));
+      gCap = sD;
+    }
     for (int l = 0; l < mItr; l++) {
       dB = fNorm;
       itr++;
-      k_residual<DOF><<<nbV / 8 + 1, TPB>>>(nNo, lhs.rowS, lhs.rowE, lhs.col, K, lhs.R, lhs.X, uj(0));
+      static const bool timing = getenv("SVGPU_TIMING") != nullptr;
+      double ts = 0.0;
+      if (timing) { CUDA_CHECK(cudaDeviceSynchronize()); ts = now(); }
+      k_residual<DOF><<<(nNo + TPB / 32 - 1) / (TPB / 32), TPB>>>(nNo, lhs.rowS, lhs.rowE, lhs.col, K, lhs.R, lhs.X, uj(0));
+      if (timing) {
+        CUDA_CHECK(cudaDeviceSynchronize());
+        printf("SVGPU-TIMING spmv dof %d nNo %d nnz %d %.3f ms\n", DOF, nNo, lhs.nnz, 1e3 * (now() - ts));
+      }
       k_sub_vec<<<nbV, TPB>>>(n, lhs.R, uj(0));
       CUDA_CHECK(cudaGetLastError());
       err[0] = std::sqrt(dot_dev(uj(0), uj(0), n));
       if (err[0] == 0.0) throw std::runtime_error("svgpu: a zero matrix norm was computed in GMRES");
       k_scale_vec<<<nbV, TPB>>>(n, 1.0 / err[0], uj(0));
+      // The Arnoldi steps and Givens rotations of the cycle are queued without
+      // synchronization; after convergence the remaining kernels return at once
+      CUDA_CHECK(cudaMemsetAsync(lhs.acc, 0, 64 * sizeof(double)));
+      CUDA_CHECK(cudaMemcpyAsync(gErr, &err[0], sizeof(double), cudaMemcpyHostToDevice));
+      CUDA_CHECK(cudaMemsetAsync(gDev, 0, 2 * sizeof(int)));
       for (int i = 0; i < sD; i++) {
-        itr++;
-        last_i = i;
-        CUDA_CHECK(cudaMemsetAsync(lhs.acc, 0, 64 * sizeof(double)));
-        ArnArgs a{nNo, i, lhs.rowS, lhs.rowE, lhs.col, K, u, lhs.hDev, lhs.acc};
+        ArnArgs a{nNo, i, lhs.rowS, lhs.rowE, lhs.col, K, u, lhs.hDev, lhs.acc, fused ? 1 : 0, &gDev->done};
+        if (am) {
+          // w = K M^-1 u_i
+          amg_vcycle<DOF>(*am, 0, uj(i), am->Z, &gDev->done);
+          k_residual<DOF><<<(nNo + TPB / 32 - 1) / (TPB / 32), TPB>>>(nNo, lhs.rowS, lhs.rowE, lhs.col, K, nullptr,
+              am->Z, uj(i + 1), &gDev->done);
+        } else if (!fused) {
+          // w = K u_i with full occupancy
+          k_residual<DOF><<<(nNo + TPB / 32 - 1) / (TPB / 32), TPB>>>(nNo, lhs.rowS, lhs.rowE, lhs.col, K, nullptr,
+              uj(i), uj(i + 1), &gDev->done);
+        }
         void* args[] = {&a};
-        CUDA_CHECK(cudaLaunchCooperativeKernel((void*)k_arnoldi<DOF>, nbArn, TPB, args, 0, 0));
-        std::vector<double> hc(i + 2);
-        CUDA_CHECK(cudaMemcpy(hc.data(), lhs.hDev, (i + 2) * sizeof(double), cudaMemcpyDeviceToHost));
-        for (int j = 0; j <= i + 1; j++) H(j, i) = hc[j];
-        for (int j = 0; j <= i - 1; j++) {
-          double tmp = c[j] * H(j, i) + s[j] * H(j + 1, i);
-          H(j + 1, i) = -s[j] * H(j, i) + c[j] * H(j + 1, i);
-          H(j, i) = tmp;
-        }
-        double tmp = std::sqrt(H(i, i) * H(i, i) + H(i + 1, i) * H(i + 1, i));
-        c[i] = H(i, i) / tmp;
-        s[i] = H(i + 1, i) / tmp;
-        H(i, i) = tmp;
-        H(i + 1, i) = 0.0;
-        err[i + 1] = -s[i] * err[i];
-        err[i] = c[i] * err[i];
-        if (std::fabs(err[i + 1]) < eps) {
-          success = true;
-          break;
-        }
+        CUDA_CHECK(cudaLaunchCooperativeKernel((void*)arn, nbA, TPB, args, smA, 0));
+        k_givens<<<1, 64>>>(gDev, i, sD, eps, lhs.hDev, lhs.acc);
       }
+      CUDA_CHECK(cudaGetLastError());
+      GmresState gs;
+      CUDA_CHECK(cudaMemcpy(&gs, gDev, sizeof(gs), cudaMemcpyDeviceToHost));
+      CUDA_CHECK(cudaMemcpy(h.data(), gH, h.size() * sizeof(double), cudaMemcpyDeviceToHost));
+      CUDA_CHECK(cudaMemcpy(err.data(), gErr, err.size() * sizeof(double), cudaMemcpyDeviceToHost));
+      itr += gs.nproc;
+      last_i = gs.nproc - 1;
+      success = gs.done != 0;
       if (last_i >= sD) last_i = sD - 1;
       for (int i = 0; i <= last_i; i++) y[i] = err[i];
       for (int j = last_i; j >= 0; j--) {
         for (int k = j + 1; k <= last_i; k++) y[j] = y[j] - H(j, k) * y[k];
         y[j] = y[j] / H(j, j);
       }
+      double* xu = lhs.X;
+      if (am) {
+        xu = am->T;
+        CUDA_CHECK(cudaMemsetAsync(xu, 0, n * sizeof(double)));
+      }
       for (int j0 = 0; j0 <= last_i; j0 += 64) {
         PtrList pl;
         int m = std::min(64, last_i + 1 - j0);
         for (int j = 0; j < m; j++) { pl.p[j] = uj(j0 + j); pl.c[j] = y[j0 + j]; }
-        k_update_x<<<nbV, TPB>>>(n, m, pl, lhs.X);
+        k_update_x<<<nbV, TPB>>>(n, m, pl, xu);
+      }
+      if (am) {
+        // X += M^-1 U y
+        amg_vcycle<DOF>(*am, 0, am->T, am->Z, nullptr);
+        k_add_vec<<<nbV, TPB>>>(n, am->Z, lhs.X);
       }
       CUDA_CHECK(cudaGetLastError());
       fNorm = std::fabs(err[last_i + 1]);
@@ -851,6 +1122,85 @@ void gmres_v(int mItr, int sD, double absTol, double relTol, svgpu_stats* stats)
     stats->iNorm = iNorm;
     stats->fNorm = fNorm;
     stats->dB = (dB > 0.0 && fNorm > 0.0) ? 10.0 * std::log(fNorm / dB) : 0.0;
+  }
+}
+
+// x += alpha p, r -= alpha q, acc += r.r
+__global__ void k_pcg_update(size_t n, double alpha, const double* p, const double* q, double* x, double* r,
+    double* acc)
+{
+  double s = 0.0;
+  for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += (size_t)gridDim.x * blockDim.x) {
+    x[i] = x[i] + alpha * p[i];
+    const double v = r[i] - alpha * q[i];
+    r[i] = v;
+    s += v * v;
+  }
+  s = block_sum(s);
+  if (threadIdx.x == 0) atomicAdd(acc, s);
+}
+
+// p = z + beta p
+__global__ void k_pcg_dir(size_t n, double beta, const double* z, double* p)
+{
+  size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) p[i] = z[i] + beta * p[i];
+}
+
+// CG preconditioned with the AMG V-cycle; the convergence check on |r| as in
+// cgrad::cgrad_v. R (device) in, X (device) out
+template <int DOF>
+void cgrad_amg(int mItr, double absTol, double relTol, svgpu_stats* stats)
+{
+  const int nNo = lhs.nNo;
+  const size_t n = DOF * (size_t)nNo;
+  const int nbV = (int)((n + TPB - 1) / TPB);
+  Amg& am = amg_get<DOF>();
+  amg_numeric<DOF>(am);
+  double* X = lhs.X;
+  double* Rr = lhs.R;
+  double* P = lhs.P;
+  double* Q = lhs.Q;
+  double* Z = am.Z;
+  const double* K = svgpu_dev_val_ptr;
+  const double iNorm = std::sqrt(dot_dev(Rr, Rr, n));
+  const double eps = std::pow(std::max(absTol, relTol * iNorm), 2.0);
+  CUDA_CHECK(cudaMemsetAsync(X, 0, n * sizeof(double)));
+  double err = iNorm * iNorm, errO = err;
+  int itr = 0;
+  bool success = false;
+  if (err >= eps) {
+    amg_vcycle<DOF>(am, 0, Rr, Z, nullptr);
+    CUDA_CHECK(cudaMemcpyAsync(P, Z, n * sizeof(double), cudaMemcpyDeviceToDevice));
+    double rz = dot_dev(Rr, Z, n);
+    for (int it = 0; it < mItr; it++) {
+      itr = it + 1;
+      k_residual<DOF><<<(nNo + TPB / 32 - 1) / (TPB / 32), TPB>>>(nNo, lhs.rowS, lhs.rowE, lhs.col, K, nullptr, P, Q);
+      const double pq = dot_dev(P, Q, n);
+      const double alpha = rz / pq;
+      CUDA_CHECK(cudaMemsetAsync(lhs.acc, 0, sizeof(double)));
+      k_pcg_update<<<160, TPB>>>(n, alpha, P, Q, X, Rr, lhs.acc);
+      errO = err;
+      CUDA_CHECK(cudaMemcpy(&err, lhs.acc, sizeof(double), cudaMemcpyDeviceToHost));
+      if (err < eps) {
+        success = true;
+        break;
+      }
+      amg_vcycle<DOF>(am, 0, Rr, Z, nullptr);
+      const double rzN = dot_dev(Rr, Z, n);
+      k_pcg_dir<<<nbV, TPB>>>(n, rzN / rz, Z, P);
+      rz = rzN;
+    }
+  } else {
+    success = true;
+  }
+  CUDA_CHECK(cudaGetLastError());
+  if (stats) {
+    stats->CG_itr = itr;
+    stats->success = success ? 1 : 0;
+    stats->iNorm = iNorm;
+    stats->fNorm = std::sqrt(err);
+    stats->dB = (errO < std::numeric_limits<double>::epsilon()) ? 0.0 : 5.0 * std::log(err / errO);
   }
 }
 
@@ -962,6 +1312,9 @@ extern "C" SVGPU_API int svgpu_fsi_assemble(int mesh, int type, int tDof, const 
     if (Do) CUDA_CHECK(cudaMemcpy(st.Do, Do, nA * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(st.Bf, Bf, 3 * (size_t)st.tnNo * sizeof(double), cudaMemcpyHostToDevice));
     const int dof = (type == 2) ? 3 : 4;
+    static const bool timing = getenv("SVGPU_TIMING") != nullptr;
+    double t0 = 0.0;
+    if (timing) { CUDA_CHECK(cudaDeviceSynchronize()); t0 = now(); }
     CUDA_CHECK(cudaMemset(st.R, 0, dof * (size_t)st.tnNo * sizeof(double)));
     const MeshDev& m = meshes[mesh];
     const int nb = (m.nEl + 127) / 128;
@@ -977,6 +1330,7 @@ extern "C" SVGPU_API int svgpu_fsi_assemble(int mesh, int type, int tDof, const 
       k_mesh<<<nb, 128>>>(m.nEl, m.IEN, m.ePtr, st, prm, m.gd);
     }
     CUDA_CHECK(cudaGetLastError());
+    if (timing) { CUDA_CHECK(cudaDeviceSynchronize()); printf("SVGPU-TIMING assemble type %d kernel %.2f ms\n", type, 1e3 * (now() - t0)); }
     CUDA_CHECK(cudaMemcpy(st.hR, st.R, dof * (size_t)st.tnNo * sizeof(double), cudaMemcpyDeviceToHost));
     for (size_t i = 0; i < dof * (size_t)st.tnNo; i++) R[i] += st.hR[i];
     return 0;
@@ -1043,7 +1397,9 @@ extern "C" SVGPU_API int svgpu_ls_solve(int type, int nNo, int nnz, int dof, int
       else if (dof == 3) gmres_v<3>(mItr, sD, absTol, relTol, stats);
       else throw std::runtime_error("svgpu: GMRES only for dof = 3 or 4");
     } else {
-      if (dof == 3) cgrad_v<3>(mItr, absTol, relTol, stats);
+      static const bool amgCg = amg_enabled();
+      if (amgCg && dof == 3) cgrad_amg<3>(mItr, absTol, relTol, stats);
+      else if (dof == 3) cgrad_v<3>(mItr, absTol, relTol, stats);
       else if (dof == 4) cgrad_v<4>(mItr, absTol, relTol, stats);
       else throw std::runtime_error("svgpu: CG only for dof = 3 or 4");
     }

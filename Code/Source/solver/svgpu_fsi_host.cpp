@@ -24,9 +24,8 @@ namespace svgpu_host {
 namespace {
 
 struct MeshInfo {
-  int id = -1;            // svgpu mesh index
-  int cDmn = -1;          // domain of all elements, -1 if mixed
-  bool checked = false;
+  int id = -1;                 // svgpu mesh index
+  std::map<int, int> cDmn;     // domain of all elements for each equation, -1 if mixed
 };
 
 std::map<const mshType*, MeshInfo> meshes;
@@ -35,10 +34,17 @@ bool setup = false;
 // Domain of all elements of the mesh for equation cEq, or -1 if mixed
 int mesh_domain(const ComMod& com_mod, const mshType& lM, int cEq)
 {
+  auto& cache = meshes[&lM].cDmn;
+  auto it = cache.find(cEq);
+  if (it != cache.end()) return it->second;
   int d0 = all_fun::domain(com_mod, lM, cEq, 0);
   for (int e = 1; e < lM.nEl; e++) {
-    if (all_fun::domain(com_mod, lM, cEq, e) != d0) return -1;
+    if (all_fun::domain(com_mod, lM, cEq, e) != d0) {
+      d0 = -1;
+      break;
+    }
   }
+  cache[cEq] = d0;
   return d0;
 }
 

@@ -19,6 +19,7 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <thread>
 #include <iostream>
 #include <set>
 
@@ -766,16 +767,37 @@ void Integrator::initiator(SolutionStates& solutions)
             }
         }
     } else {
-        for (int a = 0; a < tnNo; a++) {
+        // Raw pointers: same operations as Ag(j, a) = ... without the index
+        // checks and the reloads of the array members in the loop
+        const int nr = Ag.nrows();
+        const double *ao = Ao.data(), *an = An.data(), *yo = Yo.data(), *yn = Yn.data();
+        const double *dO = Do.data(), *dn = Dn.data();
+        double *ag = Ag.data(), *yg = Yg.data(), *dg = Dg.data();
+        const double c0 = coef(0), c1 = coef(1), c2 = coef(2), c3 = coef(3);
+        auto range = [&](int a0, int a1) {
+          for (int a = a0; a < a1; a++) {
             for (int j = s; j <= e; j++) {
+                const size_t q = j + (size_t)a * nr;
                 // eqn 89 of Bazilevs 2007
-                Ag(j, a) = Ao(j, a) * coef(0) + An(j, a) * coef(1);
+                ag[q] = ao[q] * c0 + an[q] * c1;
 
                 // eqn 90 of Bazilevs 2007
-                Yg(j, a) = Yo(j, a) * coef(2) + Yn(j, a) * coef(3);
+                yg[q] = yo[q] * c2 + yn[q] * c3;
 
-                Dg(j, a) = Do(j, a) * coef(2) + Dn(j, a) * coef(3);
+                dg[q] = dO[q] * c2 + dn[q] * c3;
             }
+          }
+        };
+        // Memory bound: split large meshes over a few threads (one MPI process)
+        const int nThr = (com_mod.cm.np() == 1 && tnNo > 100000) ?
+            (int)std::min(8u, std::max(1u, std::thread::hardware_concurrency())) : 1;
+        if (nThr == 1) {
+          range(0, tnNo);
+        } else {
+          std::vector<std::thread> thr;
+          for (int t = 1; t < nThr; t++) thr.emplace_back(range, (int)((long long)tnNo * t / nThr), (int)((long long)tnNo * (t + 1) / nThr));
+          range(0, tnNo / nThr);
+          for (auto& th : thr) th.join();
         }
     }
   }

@@ -18,3 +18,8 @@ target_include_directories(svgpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../Third
 target_link_libraries(svgpu PRIVATE CUDA::cudart_static)
 # No fused multiply-add, so that the results are close to the CPU solver
 target_compile_options(svgpu PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--fmad=false --extended-lambda>)
+# The FSI kernels with fused multiply-add (SVGPU_FSI_FMAD=OFF: without)
+option(SVGPU_FSI_FMAD "Fused multiply-add in svgpu_fsi.cu" ON)
+if(SVGPU_FSI_FMAD)
+  set_source_files_properties(svgpu_fsi.cu PROPERTIES COMPILE_OPTIONS "--fmad=true")
+endif()

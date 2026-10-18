@@ -8,6 +8,7 @@ This directory contains an experimental CUDA implementation of the per-time-step
 |---|---|---|---|---|
 | `tests/cases/fluid/iliac_artery`, 20 time steps | 75,819 tetrahedra, 15,334 nodes | 105.1 s | 11.7 s | **9×** |
 | Pipe (`make_pipe.py`), 10 time steps | 1,002,240 tetrahedra, 181,875 nodes | 1,631 s | 43.9 s | **37×** |
+| FSI pipe (`make_fsi_pipe.py`), 5 time steps | 1,244,160 tetrahedra, 220,409 nodes | 745 s | 17.0 s | **44×** |
 
 Hardware: Intel Core i9-10900X (10 cores) and NVIDIA GeForce RTX 3090, Windows 11. CPU times are with the default Windows build (clang-cl, mimalloc, no AVX2). GPU and CPU results agree within 5·10⁻¹³ (iliac artery) and 6·10⁻⁹ (pipe) relative difference.
 
@@ -54,6 +55,9 @@ Supported cases: one process; fluid equation with linear tetrahedra, VMS stabili
 | `svgpu_amg.cu` | Two-level AMG and the AMG-preconditioned CG kernel |
 | `svgpu_amg_graph.cu` | CUDA graph variant of the AMG CG (slower, not used by default) |
 | `make_pipe.py` | Generator of the 1M-tetrahedra pipe test mesh |
+| `svgpu_fsi.cu` | FSI and mesh motion assembly, GMRES and CG for dof = 3 and 4 on the device-resident matrix |
+| `svgpu_fsi_amg.inc` | Aggregation AMG preconditioner of the FSI GMRES and the mesh motion CG |
+| `make_fsi_pipe.py` | Generator of FSI pipe meshes (lumen and wall) |
 
 Changes outside this directory: `linear_solver/solve.cpp` (GPU path of `fsils_solve`), `solver/FsilsLinearAlgebra.cpp` (face terms staged for the device-resident matrix), `solver/physics/fluid/src/fluid.cpp` (GPU path of `construct_fluid`), and the CMake files (`SV_GPU_DIR`).
 
@@ -156,6 +160,41 @@ Two problems that this mesh revealed were fixed:
 
 - **Smoother damping.** A fixed Jacobi damping of 0.8 diverged (λmax(D⁻¹S) = 2.65 on this mesh, so 0.8·λmax > 2), and every linear solve failed. The damping is now `1.8/λmax`.
 - **Coarse matrix size.** With aggregates of a node and its neighbors, the dense coarse matrix would have had about 2,400 unknowns. On meshes with more than 50,000 nodes the aggregates also include the neighbors of the neighbors (672 coarse unknowns here).
+
+## FSI (fluid-structure interaction)
+
+The FSI case of `tests/cases/fsi/pipe_3d` (ALE fluid, neo-Hookean wall with the M94 volumetric penalty, linear elastic mesh motion) runs entirely on the GPU: assembly of the fluid, wall and mesh motion meshes, GMRES for the FSI equation and CG for the mesh motion equation, on the device-resident matrix. `make_fsi_pipe.py` generates larger meshes of the same geometry (radius 1, wall thickness 0.2, length 10) with conforming lumen and wall meshes.
+
+5 time steps, CPU with 10 MPI processes, same hardware as above:
+
+| Mesh | CPU | GPU, FSILS algorithms | GPU, AMG preconditioned | Speedup |
+|---|---|---|---|---|
+| 192k tetrahedra | 55.4 s | 5.07 s | 4.01 s | 14× |
+| 1.24M tetrahedra (983k fluid, 261k wall) | 745 s | 48.6 s | 17.0 s | **44×** |
+
+On the 1.24M mesh the wall-clock time is 33 s on the GPU (763 s on the CPU); most of the 16 s outside the solver is reading the text mesh in one process. The velocity, pressure, displacement and stress fields agree with the CPU within 7·10⁻¹⁴ relative difference, and the Newton residuals are the same.
+
+### Steps (1.24M mesh)
+
+| Step | Solver time | GMRES | CG |
+|---|---|---|---|
+| FSILS GMRES and CG on the GPU, same iterations as the CPU | 48.6 s | | |
+| Arnoldi step with w in registers and the basis vector in shared memory, warp per row SpMV with coalesced loads, Givens rotations on the GPU; no reallocation of the host matrix in every Newton iteration | 34.5 s | 20.5 s | 4.4 s |
+| AMG right preconditioner for GMRES (`svgpu_fsi_amg.inc`) | 21.4 s | 7.3 s | 4.3 s |
+| AMG preconditioned CG for the mesh motion | 20.3 s | 7.6 s | 3.0 s |
+| Fused multiply-add in the FSI kernels, `initiator` on several threads | 17.0 s | 7.0 s | 2.6 s |
+
+Notes:
+
+- **Kernel limits.** One GMRES iteration (without the preconditioner) takes about 0.55 ms for the SpMV (about 750 GB/s, close to the memory bandwidth) and 0.5 ms for the modified Gram-Schmidt orthogonalization, limited by the reductions and grid synchronizations (about 20 µs per projection). With the FSILS diagonal preconditioner GMRES needs 500-730 iterations per solve, so better kernels alone can give at most about 25×.
+- **AMG.** The preconditioner was designed with PyAMG on a matrix dumped from the solver: unsmoothed aggregation (standard aggregation of the node graph, 220,409 → 7,006 → 353 → 28 nodes), piecewise constant prolongation for every dof, one damped block Jacobi pre- and post-smoothing step, pseudo-inverse of the coarsest matrix. It reduces the GMRES iterations from 716 to about 120 on the first solve; the total number of GMRES iterations of the run drops by about 6× and the CG iterations by about 5×. It is applied as a right preconditioner, so the convergence check is on the residual of the original system with the same tolerance.
+  - The damping must be `omega / rho(D⁻¹A)` per level (as PyAMG does): with a fixed 0.9 GMRES did not converge at all.
+  - The dofs with zero rows and columns after the FSILS Dirichlet scaling (and the pressure of the solid) need a pseudo-inverse of the diagonal blocks, and the preconditioner output must be zero there; otherwise the pressure in the solid differs from the CPU (by 3·10⁻⁵).
+  - The V-cycle uses float matrices and vectors: with float matrices and double vectors it was 3× slower, because the FP64 rate of GeForce GPUs is 1/64 of the FP32 rate. One V-cycle takes 0.87 ms; the setup per solve (Galerkin products, damping, coarse pseudo-inverse) about 5-15 ms.
+- **Assembly** takes about 80 ms per Newton iteration (fluid 43 ms, wall 11 ms, mesh motion 26 ms). The element kernels are limited by FP64 arithmetic and register spills, not by the atomics.
+- **Numerics.** With AMG the linear solvers follow a different iteration path than FSILS, and the kernels use fused multiply-add, so the results are no longer identical to the CPU, only equal within the solver tolerances. `SVGPU_AMG=0` selects the FSILS algorithms (same iteration counts as the CPU) and `-DSVGPU_FSI_FMAD=OFF` disables fused multiply-add.
+
+Supported FSI cases: one process; linear tetrahedra, one fluid and one wall domain (one domain per mesh), constant fluid viscosity, neo-Hookean wall with the M94 volumetric model, no solid viscosity (or zero), no active stress or prestress, mesh motion with linear elasticity, GMRES and CG with the FSILS preconditioner, no coupled faces.
 
 ## GPU linear solver without GPU assembly
 
