@@ -5,6 +5,9 @@
 #include "fsils_api.hpp"
 #include "lhsa.h"
 #include <iostream>
+#ifdef SV_USE_WARP
+#include "svwarp_host.h"
+#endif
 
 /////////////////////////////////////////////////////////////////
 //             F s i l s L i n e a r A l g e b r a             //
@@ -32,6 +35,11 @@ void FsilsLinearAlgebra::alloc(ComMod& com_mod, eqType& lEq)
   #endif
   int dof = com_mod.dof;
 
+#ifdef SV_USE_WARP
+  // The matrix is assembled on the GPU (see assemble): the host matrix is
+  // not used, so do not reallocate and clear it in every Newton iteration
+  if (svwarp_host::val_on_device() && com_mod.Val.size() != 0) return;
+#endif
   com_mod.Val.resize(dof*dof, com_mod.lhs.nnz);
 }
 
@@ -48,6 +56,32 @@ void FsilsLinearAlgebra::assemble(ComMod& com_mod, const int num_elem_nodes, con
   std::cout << "[FsilsLinearAlgebra::assemble] lR.size(): " << lR.size() << std::endl;
   #endif
 
+#ifdef SV_USE_WARP
+  if (svwarp_host::val_on_device()) {
+    // The matrix is on the GPU: add the residual here and stage the matrix
+    // entries (added to the device matrix in fsils_solve)
+    auto& R = com_mod.R;
+    const auto& rowPtr = com_mod.rowPtr;
+    const auto& colPtr = com_mod.colPtr;
+    for (int a = 0; a < num_elem_nodes; a++) {
+      int rowN = eqN(a);
+      if (rowN == -1) continue;
+      for (int i = 0; i < R.nrows(); i++) R(i,rowN) = R(i,rowN) + lR(i,a);
+      for (int b = 0; b < num_elem_nodes; b++) {
+        int colN = eqN(b);
+        if (colN == -1) continue;
+        int left = rowPtr(rowN), right = rowPtr(rowN+1);
+        int ptr = (right + left) / 2;
+        while (colN != colPtr(ptr)) {
+          if (colN > colPtr(ptr)) left = ptr; else right = ptr;
+          ptr = (right + left) / 2;
+        }
+        svwarp_host::stage(ptr, &lK(0,a,b));
+      }
+    }
+    return;
+  }
+#endif
   lhsa_ns::do_assem(com_mod, num_elem_nodes, eqN, lK, lR);
 }
 

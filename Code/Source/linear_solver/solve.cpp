@@ -9,6 +9,15 @@
 #include "ns_solver.h"
 #include "precond.h"
 
+#ifdef SV_USE_WARP
+// Experimental GPU acceleration with NVIDIA Warp (solver/svwarp_host.cpp)
+namespace svwarp_host {
+bool val_on_device();
+void fsils_solve(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS_lsType& ls, int dof,
+    Array<double>& R, Array<double>& Wc);
+}
+#endif
+
 namespace fsi_linear_solver {
 
 /// @brief In this routine, the appropriate LS algorithm is called and
@@ -97,6 +106,18 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
   // Modifies Val and R.
   //
 
+#ifdef SV_USE_WARP
+  if (svwarp_host::val_on_device()) {
+    // The matrix is on the GPU: preconditioner and solver there
+    if (prec != PreconditionerType::PREC_FSILS) {
+      throw std::runtime_error("svwarp: the device matrix requires the FSILS preconditioner");
+    }
+    if (ls.LS_type != LinearSolverType::LS_TYPE_NS) {
+      throw std::runtime_error("svwarp: only the NS linear solver is supported");
+    }
+    svwarp_host::fsils_solve(lhs, ls, dof, R, Wc);
+  } else
+#endif
   if (prec == PreconditionerType::PREC_FSILS) {
     precond::precond_diag(lhs, lhs.rowPtr, lhs.colPtr, lhs.diagPtr, dof, Val, R, Wc);
   } else if (prec == PreconditionerType::PREC_RCS) {
@@ -107,6 +128,9 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
 
   // Solve for 'R'.
   //
+#ifdef SV_USE_WARP
+  if (!svwarp_host::val_on_device())
+#endif
   switch (ls.LS_type) {
     case LinearSolverType::LS_TYPE_NS:
       ns_solver::ns_solver(lhs, ls, dof, Val, R);

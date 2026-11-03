@@ -255,6 +255,7 @@ set(CSRCS
   distribute.h distribute.cpp
   eq_assem.h eq_assem.cpp
   fsi.h fsi.cpp
+  svwarp_host.h svwarp_host.cpp
   fs.h fs.cpp
   initialize.h initialize.cpp
   Integrator.h Integrator.cpp
@@ -386,6 +387,34 @@ target_link_libraries(${SV_MULTIPHYSICS_EXE}
 # extra MPI libraries only if there are not set to NOT_FOUND or other null
 if(SV_MPI_EXTRA_LIBRARY)
   target_link_libraries(${SV_MULTIPHYSICS_EXE} ${SV_MPI_EXTRA_LIBRARY})
+endif()
+
+# Experimental GPU acceleration with NVIDIA Warp (Code/Source/warp): an
+# embedded Python interpreter with the warp-lang package
+option(SV_USE_WARP "GPU acceleration with NVIDIA Warp (embedded Python)" OFF)
+if(SV_USE_WARP)
+  find_package(Python3 COMPONENTS Development.Embed REQUIRED)
+  set(SV_WARP_SITE_PACKAGES "" CACHE PATH "site-packages directory with warp-lang and numpy")
+  if(NOT SV_WARP_SITE_PACKAGES)
+    message(FATAL_ERROR "SV_USE_WARP: set SV_WARP_SITE_PACKAGES to a site-packages directory with warp-lang")
+  endif()
+  if(Python3_RUNTIME_LIBRARY_DIRS)
+    set(_py_home "${Python3_RUNTIME_LIBRARY_DIRS}")
+  else()
+    set(_py_home "${Python3_ROOT_DIR}")
+  endif()
+  target_compile_definitions(${SV_MULTIPHYSICS_EXE} PRIVATE SV_USE_WARP
+    SV_WARP_PYTHON_HOME="${_py_home}" SV_WARP_SITE_PACKAGES="${SV_WARP_SITE_PACKAGES}"
+    SV_WARP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../warp")
+  target_link_libraries(${SV_MULTIPHYSICS_EXE} Python3::Python)
+  if(WIN32)
+    # The Python DLL next to the executable
+    file(GLOB _py_dlls "${_py_home}/python3*.dll")
+    foreach(_dll ${_py_dlls})
+      add_custom_command(TARGET ${SV_MULTIPHYSICS_EXE} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_dll}" $<TARGET_FILE_DIR:${SV_MULTIPHYSICS_EXE}>)
+    endforeach()
+  endif()
 endif()
 
 if(USE_TRILINOS)

@@ -51,6 +51,11 @@ add_library(${lib} ${SV_LIBRARY_TYPE} ${CSRCS})
 target_include_directories(${lib} PRIVATE ${SV_SOURCE_DIR}/ThirdParty/eigen/include/eigen3)
 
 target_link_libraries(${lib} ${MPI_LIBRARY} ${MPI_Fortran_LIBRARIES})
+
+# Experimental GPU acceleration with NVIDIA Warp (see solver/CMakeLists.txt)
+if(SV_USE_WARP)
+  target_compile_definitions(${lib} PRIVATE SV_USE_WARP)
+endif()
 #target_link_libraries(${lib} ${MPI_LIBRARY} ${MPI_Fortran_LIBRARIES} ${VTK_LIBRARIES})
 
 # extra MPI libraries only if there are not set to NOT_FOUND or other null 
