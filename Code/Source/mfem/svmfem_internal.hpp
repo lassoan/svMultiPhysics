@@ -23,8 +23,14 @@ struct Lhs {
   Vector W, Dmul;                            // 4 x nNo
 };
 
-/// The device matrix (set up by svmfem_fluid_setup), null before
+/// The device matrix (set up by svmfem_fluid_setup or svmfem_fsi_setup),
+/// null before
 Lhs* lhs();
+
+/// Create the device matrix structure from the CSR pattern (rowPtr: nNo + 1,
+/// colPtr: nnz; sorted columns, symmetric pattern) and make it the current
+/// one; Val (16 x nnz) is zero
+Lhs* make_lhs(int nNo, int nnz, const int* rowPtr, const int* colPtr);
 
 }  // namespace svmfem
 

@@ -182,6 +182,7 @@ void Sell::build(int n_, const std::vector<int>& off, const std::vector<int>& co
     }
   }
   padding = off[n] > 0 ? (double)total / off[n] : 1.0;
+  h_slice_off = h_soff;
   dupload(slice_off, h_soff);
   dupload(cols, h_cols);
   dupload(smap, h_smap);
@@ -282,6 +283,7 @@ extern "C" SVMFEM_API void svmfem_finalize(void)
   using namespace svmfem;
   if (!device) return;
   destroy_solver();
+  destroy_fsi();
   destroy_fluid();
   delete device;   // destroys the MFEM memory manager (device allocations)
   device = nullptr;

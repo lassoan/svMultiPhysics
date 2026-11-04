@@ -26,13 +26,14 @@ bool construct_fluid(ComMod& com_mod, const mshType& lM, const Array<double>& Ag
 /// The matrix of the current equation is on the device (host assembly of
 /// element contributions is staged, see stage()).
 bool val_on_device();
+void set_on_device(bool on);
 
 /// Stage matrix entries assembled on the host (face terms): ptr is the
-/// position in the FSILS matrix, vals the dof*dof block.
-void stage(int ptr, const double* vals);
+/// position in the FSILS matrix, vals the dof*dof block (n values).
+void stage(int ptr, const double* vals, int n);
 
-/// FSILS NS solver on the device matrix: preconditioner and solve
-/// (fsils_solve with the FSILS preconditioner, one process).
+/// FSILS NS, GMRES or CG solver on the device matrix: preconditioner and
+/// solve (fsils_solve with the FSILS preconditioner, one process).
 void fsils_solve(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS_lsType& ls, int dof,
     Array<double>& R, Array<double>& Wc);
 

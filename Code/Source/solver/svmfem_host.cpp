@@ -33,10 +33,15 @@ bool val_on_device()
   return on_device;
 }
 
-void stage(int ptr, const double* vals)
+void set_on_device(bool on)
+{
+  on_device = on;
+}
+
+void stage(int ptr, const double* vals, int n)
 {
   stage_ptr.push_back(ptr);
-  stage_val.insert(stage_val.end(), vals, vals + 16);
+  stage_val.insert(stage_val.end(), vals, vals + n);
 }
 
 bool construct_fluid(ComMod& com_mod, const mshType& lM, const Array<double>& Ag, const Array<double>& Yg)
@@ -75,9 +80,15 @@ void fsils_solve(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS
 {
   using namespace fsi_linear_solver;
   const int nNo = lhs.nNo;
-  if (dof != 4) throw std::runtime_error("svmfem: the NS solver requires dof = 4");
+  const bool ns = ls.LS_type == LinearSolverType::LS_TYPE_NS;
+  if (ns && dof != 4) throw std::runtime_error("svmfem: the NS solver requires dof = 4");
+  if (!ns && dof != 3 && dof != 4) throw std::runtime_error("svmfem: GMRES and CG require dof = 3 or 4");
   // Face terms assembled on the host
-  check(svmfem_add_val((int)stage_ptr.size(), stage_ptr.data(), stage_val.data()), "add_val");
+  if (ns) {
+    check(svmfem_add_val((int)stage_ptr.size(), stage_ptr.data(), stage_val.data()), "add_val");
+  } else {
+    check(svmfem_add_val_dof((int)stage_ptr.size(), dof, stage_ptr.data(), stage_val.data()), "add_val_dof");
+  }
   stage_ptr.clear();
   stage_val.clear();
   // Preconditioner: Dirichlet factors of precond_diag, W from the device
@@ -90,8 +101,31 @@ void fsils_solve(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS
       for (int i = 0; i < n; i++) Dmul(i, face.glob(a)) *= face.val(i, a);
     }
   }
-  check(svmfem_precond_diag(Dmul.data(), Wc.data()), "precond_diag");
+  if (ns) {
+    check(svmfem_precond_diag(Dmul.data(), Wc.data()), "precond_diag");
+  } else {
+    check(svmfem_precond_diag_dof(dof, Dmul.data(), Wc.data()), "precond_diag_dof");
+  }
   for (int i = 0; i < R.size(); i++) R(i) = Wc(i) * R(i);
+  if (!ns) {
+    // GMRES and CG on the device matrix (no coupled faces)
+    for (auto& face : lhs.face) {
+      if (face.coupledFlag) throw std::runtime_error("svmfem: coupled faces are not supported with GMRES and CG");
+    }
+    svmfem_stats st{};
+    const int type = (ls.LS_type == LinearSolverType::LS_TYPE_GMRES) ? 0 : 1;
+    check(svmfem_ls_solve(type, dof, ls.RI.mItr, ls.RI.sD, ls.RI.absTol, ls.RI.relTol, R.data(), &st), "ls_solve");
+    ls.RI.itr = type == 0 ? st.GM_itr : st.CG_itr;
+    ls.RI.success = st.success != 0;
+    ls.RI.iNorm = st.iNorm;
+    ls.RI.fNorm = st.fNorm;
+    ls.RI.dB = st.dB;
+    ls.RI.callD = st.time;
+    if (getenv("SV_LS_STATS")) {
+      printf("LSSTATS-MFEM type=%d dof=%d itr=%d time=%g" "\n", type, dof, ls.RI.itr, st.time);
+    }
+    return;
+  }
   // Coupled (resistance) faces
   std::vector<svmfem_face> faces;
   for (auto& face : lhs.face) {

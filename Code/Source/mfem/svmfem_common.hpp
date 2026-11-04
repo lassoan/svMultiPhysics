@@ -15,6 +15,7 @@
 
 #include "mfem.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -29,6 +30,7 @@ using mfem::Array;
 using mfem::Vector;
 
 constexpr int TPB = 256;   // threads per block of the reduction kernels
+constexpr int RED_BLOCKS = 512;   // blocks of a reduction kernel (grid-stride loop beyond)
 
 /// Configure the MFEM device once ("cuda" or "cpu")
 void init_device(const char* device);
@@ -41,6 +43,7 @@ bool verbose();
 /// Release the objects of the assembly and of the solver (svmfem_finalize)
 void destroy_fluid();
 void destroy_solver();
+void destroy_fsi();
 /// Wall-clock time in seconds
 double now();
 /// Trace message to stderr (SVMFEM_DEBUG=1)
@@ -138,16 +141,23 @@ inline Slots<2> slots(int a, int b) { return {{a, b}}; }
 /// the device-scalar replacement of the host-synchronizing dot products.
 template <int NR, typename BODY> void launch_red(int n, double* sc, Slots<NR> sl, BODY&& body)
 {
-  const int nb = blocks(n);
+  // Grid-stride loop with at most RED_BLOCKS blocks: several elements per
+  // thread amortize the block reduction on large vectors
+  const int nb = std::min(blocks(n), RED_BLOCKS);
   if (nb == 0) return;
+  const int stride = nb * TPB;
   mfem::forall_2D(nb, TPB, 1, [=] MFEM_HOST_DEVICE (int blk) {
     MFEM_SHARED double sh[NR][TPB];
     MFEM_FOREACH_THREAD(t, x, TPB) {
-      const int i = blk * TPB + t;
-      double v[NR];
-      for (int k = 0; k < NR; k++) v[k] = 0.0;
-      if (i < n) body(i, v);
-      for (int k = 0; k < NR; k++) sh[k][t] = v[k];
+      double acc[NR];
+      for (int k = 0; k < NR; k++) acc[k] = 0.0;
+      for (int i = blk * TPB + t; i < n; i += stride) {
+        double v[NR];
+        for (int k = 0; k < NR; k++) v[k] = 0.0;
+        body(i, v);
+        for (int k = 0; k < NR; k++) acc[k] += v[k];
+      }
+      for (int k = 0; k < NR; k++) sh[k][t] = acc[k];
     }
     MFEM_SYNC_THREAD;
     for (int s = TPB / 2; s > 0; s >>= 1) {
@@ -160,6 +170,52 @@ template <int NR, typename BODY> void launch_red(int n, double* sc, Slots<NR> sl
     }
     MFEM_FOREACH_THREAD(t, x, TPB) {
       if (t < NR) AtomicAdd(sc[sl.s[t]], sh[t][0]);
+    }
+  });
+}
+
+/// Slots of a multi-value reduction: slot j is base + j, or s[j] when a
+/// list of n slots is given (non-contiguous slots)
+struct SlotList {
+  int base, n;
+  int s[9];
+  MFEM_HOST_DEVICE int slot(int j) const { return n > 0 ? s[j] : base + j; }
+};
+
+inline SlotList range_slots(int s0, int)
+{
+  SlotList sl{};
+  sl.base = s0;
+  return sl;
+}
+
+/// Multi-value block reduction: body(i, j) for i < n, j < m; the sums are
+/// added atomically to sc[sl.slot(j)]. The values are reduced in chunks of NR.
+template <int NR, typename BODY> void launch_red_multi(int n, int m, double* sc, SlotList sl, BODY&& body)
+{
+  const int nb = blocks(n);
+  if (nb == 0 || m == 0) return;
+  if (sl.n > 0 && m > sl.n) fail("too many reduction slots");
+  mfem::forall_2D(nb, TPB, 1, [=] MFEM_HOST_DEVICE (int blk) {
+    MFEM_SHARED double sh[NR][TPB];
+    for (int j0 = 0; j0 < m; j0 += NR) {
+      MFEM_FOREACH_THREAD(t, x, TPB) {
+        const int i = blk * TPB + t;
+        for (int k = 0; k < NR; k++) sh[k][t] = (i < n && j0 + k < m) ? body(i, j0 + k) : 0.0;
+      }
+      MFEM_SYNC_THREAD;
+      for (int s = TPB / 2; s > 0; s >>= 1) {
+        MFEM_FOREACH_THREAD(t, x, TPB) {
+          if (t < s) {
+            for (int k = 0; k < NR; k++) sh[k][t] += sh[k][t + s];
+          }
+        }
+        MFEM_SYNC_THREAD;
+      }
+      MFEM_FOREACH_THREAD(t, x, TPB) {
+        if (t < NR && j0 + t < m) AtomicAdd(sc[sl.slot(j0 + t)], sh[t][0]);
+      }
+      MFEM_SYNC_THREAD;
     }
   });
 }
@@ -204,8 +260,11 @@ struct Sell {
   static constexpr int C = 32, U = 4;
   int n = 0, nslices = 0, total = 0;
   Array<int> slice_off, cols, smap;   // device
+  std::vector<int> h_slice_off;       // host copy of slice_off
   double padding = 0.0;               // total / nnz
   void build(int n, const std::vector<int>& off, const std::vector<int>& col);
+  /// Slot of entry k of row i
+  int slot(int i, int k) const { return h_slice_off[i / C] + k * C + i % C; }
 };
 
 /// Vs[m q + k] = V[m smap[q] + k] (0 for the padding), k < m

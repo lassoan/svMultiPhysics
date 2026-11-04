@@ -133,6 +133,50 @@ Lhs* lhs()
   return the_lhs;
 }
 
+Lhs* make_lhs(int nNo, int nnz, const int* rowPtr, const int* colPtr)
+{
+  // Matrix structure
+  Lhs* L = new Lhs();
+  L->nNo = nNo;
+  L->nnz = nnz;
+  L->h_off.assign(rowPtr, rowPtr + nNo + 1);
+  L->h_col.assign(colPtr, colPtr + nnz);
+  std::vector<int> rows(nnz), diag(nNo, -1), tpos(nnz, -1);
+  for (int a = 0; a < nNo; a++) {
+    for (int j = rowPtr[a]; j < rowPtr[a + 1]; j++) {
+      rows[j] = a;
+      if (colPtr[j] == a) diag[a] = j;
+    }
+  }
+  for (int a = 0; a < nNo; a++) {
+    if (diag[a] < 0) fail("a row without diagonal entry");
+    for (int j = rowPtr[a]; j < rowPtr[a + 1]; j++) {
+      // Binary search of a in row colPtr[j] (sorted columns)
+      int c = colPtr[j];
+      int lo = rowPtr[c], hi = rowPtr[c + 1] - 1;
+      while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (colPtr[mid] < a) lo = mid + 1; else hi = mid;
+      }
+      if (colPtr[lo] != a) fail("the matrix pattern is not symmetric");
+      tpos[j] = lo;
+    }
+  }
+  dupload(L->offsets, L->h_off);
+  dupload(L->columns, L->h_col);
+  dupload(L->rows, rows);
+  dupload(L->diag, diag);
+  dupload(L->tpos, tpos);
+  dalloc(L->Val, 16 * nnz);
+  fill(L->Val.Write(), 16 * nnz, 0.0);
+  dalloc(L->W, 4 * nNo);
+  dalloc(L->Dmul, 4 * nNo);
+  delete the_lhs;
+  the_lhs = L;
+  return L;
+}
+
+
 void destroy_fluid()
 {
   if (fl) {
@@ -168,42 +212,7 @@ extern "C" SVMFEM_API int svmfem_fluid_setup(int nEl, const int* IEN, int tnNo, 
     fl->tnNo = tnNo;
     dupload(fl->IEN, IEN, 4 * nEl);
     dupload(fl->x, x, 3 * tnNo);
-    // Matrix structure
-    Lhs* L = the_lhs = new Lhs();
-    L->nNo = tnNo;
-    L->nnz = nnz;
-    L->h_off.assign(rowPtr, rowPtr + tnNo + 1);
-    L->h_col.assign(colPtr, colPtr + nnz);
-    std::vector<int> rows(nnz), diag(tnNo, -1), tpos(nnz, -1);
-    for (int a = 0; a < tnNo; a++) {
-      for (int j = rowPtr[a]; j < rowPtr[a + 1]; j++) {
-        rows[j] = a;
-        if (colPtr[j] == a) diag[a] = j;
-      }
-    }
-    for (int a = 0; a < tnNo; a++) {
-      if (diag[a] < 0) fail("a row without diagonal entry");
-      for (int j = rowPtr[a]; j < rowPtr[a + 1]; j++) {
-        // Binary search of a in row colPtr[j] (sorted columns)
-        int c = colPtr[j];
-        int lo = rowPtr[c], hi = rowPtr[c + 1] - 1;
-        while (lo < hi) {
-          int mid = (lo + hi) / 2;
-          if (colPtr[mid] < a) lo = mid + 1; else hi = mid;
-        }
-        if (colPtr[lo] != a) fail("the matrix pattern is not symmetric");
-        tpos[j] = lo;
-      }
-    }
-    dupload(L->offsets, L->h_off);
-    dupload(L->columns, L->h_col);
-    dupload(L->rows, rows);
-    dupload(L->diag, diag);
-    dupload(L->tpos, tpos);
-    dalloc(L->Val, 16 * nnz);
-    fill(L->Val.Write(), 16 * nnz, 0.0);
-    dalloc(L->W, 4 * tnNo);
-    dalloc(L->Dmul, 4 * tnNo);
+    Lhs* L = make_lhs(tnNo, nnz, rowPtr, colPtr);
     // Matrix entry of every node pair of every element
     dalloc(fl->ePtr, 16 * nEl);
     {

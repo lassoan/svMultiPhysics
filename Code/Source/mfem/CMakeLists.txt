@@ -22,7 +22,7 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(mfem REQUIRED NAMES MFEM HINTS "${MFEM_DIR}")
 message(STATUS "MFEM ${MFEM_VERSION} from ${MFEM_DIR} (CUDA ${MFEM_USE_CUDA})")
 
-set(SVMFEM_SOURCES svmfem_device.cu svmfem_fluid.cu svmfem_amg.cu svmfem_ns.cu)
+set(SVMFEM_SOURCES svmfem_device.cu svmfem_fluid.cu svmfem_amg.cu svmfem_ns.cu svmfem_fsi.cu)
 if(NOT SVMFEM_CUDA)
   set_source_files_properties(${SVMFEM_SOURCES} PROPERTIES LANGUAGE CXX)
   if(MSVC)

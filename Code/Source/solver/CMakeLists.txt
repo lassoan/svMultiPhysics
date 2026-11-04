@@ -256,6 +256,7 @@ set(CSRCS
   eq_assem.h eq_assem.cpp
   fsi.h fsi.cpp
   svmfem_host.h svmfem_host.cpp
+  svmfem_fsi_host.h svmfem_fsi_host.cpp
   fs.h fs.cpp
   initialize.h initialize.cpp
   Integrator.h Integrator.cpp

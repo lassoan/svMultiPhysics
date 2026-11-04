@@ -112,8 +112,9 @@ void fsils_solve(FSILS_lhsType& lhs, FSILS_lsType& ls, const int dof, Array<doub
     if (prec != PreconditionerType::PREC_FSILS) {
       throw std::runtime_error("svmfem: the device matrix requires the FSILS preconditioner");
     }
-    if (ls.LS_type != LinearSolverType::LS_TYPE_NS) {
-      throw std::runtime_error("svmfem: only the NS linear solver is supported");
+    if (ls.LS_type != LinearSolverType::LS_TYPE_NS && ls.LS_type != LinearSolverType::LS_TYPE_GMRES &&
+        ls.LS_type != LinearSolverType::LS_TYPE_CG) {
+      throw std::runtime_error("svmfem: only the NS, GMRES and CG linear solvers are supported");
     }
     svmfem_host::fsils_solve(lhs, ls, dof, R, Wc);
   } else

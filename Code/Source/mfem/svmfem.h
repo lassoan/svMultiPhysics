@@ -87,6 +87,45 @@ SVMFEM_API int svmfem_precond_diag(const double* Dmul, double* W);
 SVMFEM_API int svmfem_ns_solve(double* R, int nFaces, const svmfem_face* faces, const svmfem_params* params,
     svmfem_stats* stats);
 
+// ---------------------------------------------------------------------------
+// FSI (fsi.cpp, mesh.cpp): assembly of the FSI equation (ALE fluid and
+// neo-Hookean wall, dof = 4) and of the mesh motion equation (linear
+// elasticity, dof = 3) on linear tetrahedra, and the FSILS GMRES and CG
+// solvers for dof = 3 and 4 on the device resident matrix, preconditioned
+// with an aggregation AMG V-cycle (unless SVMFEM_AMG=0).
+
+/// Node coordinates (3 x tnNo) and the matrix structure (CSR, tnNo+1 and
+/// nnz) of the device resident matrix (16 x nnz values for dof = 4, the
+/// first 9 x nnz for dof = 3).
+SVMFEM_API int svmfem_fsi_setup(int tnNo, const double* x, int nnz, const int* rowPtr, const int* colPtr);
+
+/// Add a mesh (IEN: 4 x nEl, Gauss data as svmfem_fluid_setup); returns its
+/// index, or -1.
+SVMFEM_API int svmfem_fsi_add_mesh(int nEl, const int* IEN, int nG, const double* w, const double* N,
+    const double* Nxi);
+
+/// Assemble one mesh into the device matrix (added, not cleared: the matrix
+/// is cleared by svmfem_ls_solve) and add the residual to R (dof x tnNo,
+/// host). type: 0 = FSI fluid (ALE), 1 = FSI struct, 2 = mesh motion. Ag,
+/// Yg, Dg, Do: tDof x tnNo (Do only for type 2), Bf: 3 x tnNo. params: fluid
+/// {rho, mu, fx, fy, fz, dt, af, am, gam}, struct {rho, dmp, fx, fy, fz,
+/// C10, Kpen, dt, af, am, beta, gam}, mesh {rho, E, nu, fx, fy, fz, dt, af,
+/// am, beta}.
+SVMFEM_API int svmfem_fsi_assemble(int mesh, int type, int tDof, const double* Ag, const double* Yg,
+    const double* Dg, const double* Do, const double* Bf, const double* params, double* R);
+
+/// Add n matrix entries (dof*dof values each) to the device matrix
+SVMFEM_API int svmfem_add_val_dof(int n, int dof, const int* ptr, const double* vals);
+
+/// FSILS diagonal preconditioner of the device matrix for dof = 3 or 4
+/// (Dmul, W: dof x nNo)
+SVMFEM_API int svmfem_precond_diag_dof(int dof, const double* Dmul, double* W);
+
+/// FSILS GMRES (type 0) or CG (type 1) on the device matrix. R: dof x nNo
+/// right-hand side in, solution out. The device matrix is cleared afterwards.
+SVMFEM_API int svmfem_ls_solve(int type, int dof, int mItr, int sD, double absTol, double relTol, double* R,
+    svmfem_stats* stats);
+
 #ifdef __cplusplus
 }
 #endif

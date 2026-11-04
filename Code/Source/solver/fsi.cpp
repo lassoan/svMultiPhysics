@@ -16,6 +16,9 @@
 #include "uris.h"
 
 #include <array>
+#ifdef SV_USE_MFEM
+#include "svmfem_fsi_host.h"
+#endif
 #include <iomanip>
 #include <math.h>
 
@@ -26,6 +29,10 @@ void construct_fsi(ComMod& com_mod, CepMod& cep_mod, const mshType& lM, const So
   const auto& Ag = solutions.intermediate.get_acceleration();
   const auto& Yg = solutions.intermediate.get_velocity();
   const auto& Dg = solutions.intermediate.get_displacement();
+#ifdef SV_USE_MFEM
+  // Experimental GPU assembly
+  if (svmfem_host::construct_fsi(com_mod, lM, solutions)) return;
+#endif
   #define n_debug_construct_fsi 
   #ifdef debug_construct_fsi
   DebugMsg dmsg(__func__, com_mod.cm.idcm());

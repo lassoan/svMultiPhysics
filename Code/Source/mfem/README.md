@@ -1,6 +1,6 @@
 # GPU acceleration experiment with MFEM
 
-This directory contains an experimental implementation of the per-time-step computation of the rigid-wall fluid equation with [MFEM](https://mfem.org): element assembly, FSILS diagonal preconditioner and FSILS NS linear solver, written as MFEM kernels (`mfem::forall` with host/device lambdas) on MFEM vectors and arrays. It is the third implementation of the same experiment, after the hand-written CUDA version (branch `gpu-exp`, `Code/Source/gpu`) and the NVIDIA Warp version (branch `warp-exp`, `Code/Source/warp`). The goal was to find out what a portable, library-based implementation costs in performance and in effort compared with the two others. It is not a production feature.
+This directory contains an experimental implementation of the per-time-step computation of the rigid-wall fluid equation and of FSI (see below) with [MFEM](https://mfem.org): element assembly, FSILS diagonal preconditioner and FSILS linear solvers, written as MFEM kernels (`mfem::forall` with host/device lambdas) on MFEM vectors and arrays. It is the third implementation of the same experiment, after the hand-written CUDA version (branch `gpu-exp`, `Code/Source/gpu`) and the NVIDIA Warp version (branch `warp-exp`, `Code/Source/warp`). The goal was to find out what a portable, library-based implementation costs in performance and in effort compared with the two others. It is not a production feature.
 
 ## Summary
 
@@ -8,6 +8,7 @@ This directory contains an experimental implementation of the per-time-step comp
 |---|---|---|---|---|---|
 | `tests/cases/fluid/iliac_artery`, 75,819 tetrahedra, 20 time steps | 106 s | 11.7 s | 9.1 s | **7.2 s** | **15×** |
 | Pipe (`Code/Source/gpu/make_pipe.py`), 1,002,240 tetrahedra, 10 time steps | 1,631 s | 43.9 s | 33.0 s | **32.5 s** | **50×** |
+| FSI pipe (`Code/Source/gpu/make_fsi_pipe.py`), 1,244,160 tetrahedra, 5 time steps | 885 s | 17.0 s | 31.7 s | **24.4 s** | **36×** |
 
 The same MFEM code on the CPU only (MFEM built without CUDA, the library compiled as plain C++; MFEM's `cpu` backend on one thread and `omp` backend on 10 threads), against the svMultiPhysics CPU code of the same build:
 
@@ -69,7 +70,7 @@ The resulting `svmfem.dll` has the same interface and can replace the CUDA one n
 
 Other environment variables: `SVMFEM_DEVICE=cpu` (or `omp` with the CPU-only build) runs the same kernels on the host through MFEM's CPU or OpenMP backend, `SVMFEM_NOGRAPH=1` launches the kernels one by one instead of CUDA graphs, `SVMFEM_TIMING=1` and `SV_LS_STATS=1` print timings and iteration counts, `SV_GPU_VERBOSE=1` prints the setup, `SVMFEM_DEBUG=1` traces the phases, `SVMFEM_AMG_W`, `SVMFEM_AMG_WC`, `SVMFEM_AMG_CAND`, `SVMFEM_AMG_CMAX` and `SVMFEM_CG_CHUNK` are the AMG and CG parameters of the Warp version.
 
-Supported cases are those of the other two experiments: one process; fluid equation with linear tetrahedra, VMS stabilization, one domain with constant viscosity, no moving mesh, no RIS valves, resistance (coupled Neumann) faces without caps, FSILS preconditioner and `NS` linear solver. Other cases use the CPU code or stop with an error.
+Supported cases are those of the other two experiments: one process; fluid equation with linear tetrahedra, VMS stabilization, one domain with constant viscosity, no moving mesh, no RIS valves, resistance (coupled Neumann) faces without caps, FSILS preconditioner and `NS` linear solver; FSI with linear tetrahedra, one fluid and one wall domain (one domain per mesh), constant fluid viscosity, neo-Hookean wall with the M94 volumetric model, no solid viscosity, active stress or prestress, mesh motion with linear elasticity, GMRES and CG with the FSILS preconditioner, no coupled faces (`SVMFEM_AMG=0` for the plain FSILS algorithms, `SVMFEM_AMG_CMAX` for the size of the coarsest AMG level, default 128 nodes). Other cases use the CPU code or stop with an error.
 
 ## Files
 
@@ -81,10 +82,11 @@ Supported cases are those of the other two experiments: one process; fluid equat
 | `fluid_element.inc`, `gen_fluid.py` | Element routines, generated from `physics/fluid/src/fluid.cpp` with `MFEM_HOST_DEVICE` |
 | `svmfem_ns.cu` | FSILS NS solver: outer iteration, GMRES, Schur complement, AMG preconditioned CG |
 | `svmfem_amg.hpp`, `svmfem_amg.cu` | Aggregation AMG (host setup, device numeric phase and V-cycle) |
-| `svmfem_lstsq.cpp` | Least squares solve of the outer iteration (Eigen, host) |
+| `svmfem_lstsq.cpp` | Least squares solve of the outer iteration and the pseudo-inverse of the coarsest FSI AMG matrix (Eigen, host) |
+| `svmfem_fsi.cu` | FSI: assembly of the ALE fluid, neo-Hookean wall and mesh motion equations, block SELL products, aggregation AMG for the dof × dof block matrix, GMRES and CG for dof = 3 and 4 |
 | `mfem-msvc-cuda.patch`, `mfem-parallel-compile.py` | MFEM build on Windows with nvcc |
 
-Changes outside this directory: `solver/svmfem_host.cpp` (host side of the hooks), `linear_solver/solve.cpp`, `solver/FsilsLinearAlgebra.cpp`, `solver/physics/fluid/src/fluid.cpp`, `solver/main.cpp` and the CMake files (`SV_MFEM_DIR`): the same hook points as the two other experiments.
+Changes outside this directory: `solver/svmfem_host.cpp` (host side of the hooks), `solver/svmfem_fsi_host.cpp` (hooks of `construct_fsi` and `construct_mesh`), `linear_solver/solve.cpp`, `solver/FsilsLinearAlgebra.cpp`, `solver/physics/fluid/src/fluid.cpp`, `solver/fsi.cpp`, `solver/mesh.cpp`, `solver/Integrator.cpp` (threaded `initiator`, as on the CUDA branch), `solver/main.cpp` and the CMake files (`SV_MFEM_DIR`): the same hook points as the two other experiments.
 
 ## Implementation
 
@@ -124,6 +126,27 @@ The same kernels on the CPU (per Newton iteration; the svMultiPhysics CPU code t
 
 The GPU kernels were designed for the GPU (one thread per row, SELL layout, atomic reductions per 256-element block, float AMG): on the CPU they are correct but not tuned, which is the price of single-source code; an OpenMP-aware layout (rows per thread, no atomics in the reductions) would help the CPU without changing the algorithm.
 
+## FSI
+
+The FSI case is `tests/cases/fsi/pipe_3d` on larger meshes (`Code/Source/gpu/make_fsi_pipe.py` of the CUDA branch: lumen radius 1, wall thickness 0.2, length 10, conforming tetrahedral meshes): ALE fluid in the current configuration with the mesh velocity, neo-Hookean wall with the M94 volumetric penalty, linear elastic mesh motion, 5 time steps. The FSI equation is solved with GMRES (dof = 4, Krylov space 50), the mesh motion with CG (dof = 3), both with the FSILS diagonal preconditioner on the CPU and with an additional aggregation AMG V-cycle on the GPU (right preconditioner of GMRES, preconditioner of CG; `SVMFEM_AMG=0` selects the plain FSILS algorithms, which then reproduce the CPU iteration counts of the CG exactly and the fields within 10⁻¹⁴).
+
+| Mesh | svMultiPhysics, 10 MPI processes | CUDA (`gpu-exp`) | Warp (`warp-exp`) | MFEM (`mfem-exp`) |
+|---|---|---|---|---|
+| 192k tetrahedra (`mesh16`), 35,721 nodes | 63.1 s | 4.0 s | 7.0 s | 5.5 s |
+| 1.24M tetrahedra (`mesh32`, 983k fluid and 261k wall), 220,409 nodes | 885 s | 17.0 s | 31.7 s | 24.4 s |
+
+The CPU time is the current clang-cl build with AVX2 (`msvc-build`, 10 MPI processes); the CUDA branch measured 745 s for the same run with the build without AVX2. All versions take 35 Newton iterations of the FSI equation and 35 of the mesh equation on the 1.24M mesh with the same Newton residuals; the AMG brings the GMRES iterations of the run from 26,486 (CPU) to about 3,850 and the CG iterations from 9,896 to about 2,120. The velocity, pressure, displacement and stress fields agree with the CPU within 7·10⁻¹⁴ (MFEM) and 5·10⁻¹¹ (Warp) relative difference.
+
+The implementation is the port of `svgpu_fsi.cu` and `svgpu_fsi_amg.inc` of the CUDA branch to MFEM kernels (`svmfem_fsi.cu`, about 1,200 lines, one day of work with the fluid version as the template):
+
+- **Assembly**: the element routines of the CUDA branch (the generated ALE fluid routines with the mesh velocity, `struct_3d` for the neo-Hookean/M94 wall, `l_elas_3d` for the mesh motion) with `MFEM_HOST_DEVICE`, one `mfem::forall` kernel per mesh and equation, atomic additions into the device matrix (16 values per entry for dof = 4, 9 for dof = 3). The matrix stays on the device: the host-assembled boundary terms are staged, the FSILS preconditioner runs on the device, the solution comes back in `R`.
+- **Block products**: SELL-32 layout with the block values stored entry-major (value e of slot q at `e * total + q`, one thread per row, two slots per loop iteration), in double for the Krylov solvers and in float for the AMG hierarchy (`brow` in `svmfem_fsi.cu`). A product with the 4×4 blocks of the 1.24M mesh (3.2M entries, 440 MB) takes about 0.6 ms.
+- **AMG** (`Bamg<DOF>`): unsmoothed aggregation of the node graph (the same `aggregate` as the Schur complement AMG), piecewise constant prolongation for every dof, Galerkin block sums with gather lists (deterministic, no atomics), block Jacobi smoothing with the pseudo-inverse of the diagonal blocks (zero rows and columns of the Dirichlet dofs left out) and the damping ω / ρ(D⁻¹A) with ω = 0.9 from a power iteration on the device, levels 220,409 → 7,006 → 353 → 28 nodes on the 1.24M mesh, pseudo-inverse of the coarsest matrix (at most 128 nodes) with Eigen on the host (the matrix is nonsymmetric and singular, so the Gauss-Jordan steps of the Schur complement AMG do not apply). The V-cycle is 5 kernels per level and one for the coarsest solve, all `mfem::forall`, so it is captured in the graphs of the Arnoldi steps and CG iterations.
+- **GMRES** (`gmres::gmres_v` with the right preconditioner): one Arnoldi step is one CUDA graph: normalization, V-cycle, product with `u_0 · w` fused, then the modified Gram-Schmidt as one reduction kernel per basis vector (`w -= h_j u_j` and the next dot product `u_{j+1} · w` in the same pass, as `gmres_v` and the cooperative kernel of the CUDA branch); the Hessenberg column reaches the host through mapped memory, the Givens rotations and the restart logic are host code. Classical Gram-Schmidt (one reduction kernel for all projections) was tried first and converged in fewer iterations on the CPU-assembled test case, which is the sign of a basis that is no longer orthogonal; the modified variant reproduces the CPU iteration counts. The reductions are grid-stride loops (at most 512 blocks): with one element per thread the Gram-Schmidt kernels on 880k unknowns cost 150 µs each instead of 40 µs, which made the Arnoldi step 5.2 ms instead of 3.3 ms.
+- **CG** (`cgrad::cgrad_v` with the V-cycle): chunks of 2 iterations per graph as in the NS solver, with the parity of the iteration carried across chunks.
+
+Per Newton iteration on the 1.24M mesh: assembly 40 ms (fluid, wall and mesh motion), GMRES 3.3 ms per Arnoldi step (about 110 steps per solve), CG 1.3 ms per iteration (about 60 per solve), AMG setup 15 ms per solve. Without the AMG (`SVMFEM_AMG=0`) GMRES needs 7× the iterations (730 instead of 123 in the first solve) at about 80% of the cost per step: the V-cycle costs about 0.6 ms per step, the product with the 4×4 blocks and the Gram-Schmidt passes the rest. The 17.0 s of the CUDA branch come from a warp-per-row product that reaches 750 GB/s and a Gram-Schmidt kernel that keeps `w` in registers (one vector read per basis vector instead of three).
+
 ## nvcc and MSVC pitfalls
 
 These cost most of the debugging time; none of them exists with gcc or clang on Linux.
@@ -138,9 +161,10 @@ These cost most of the debugging time; none of them exists with gcc or clang on 
 | | CUDA (`gpu-exp`, fluid part) | Warp (`warp-exp`) | MFEM (this branch) |
 |---|---|---|---|
 | Language | C++/CUDA, cooperative kernels | Python, Warp kernels, CUDA graphs | C++, MFEM kernels, CUDA graphs |
-| Lines (solver, assembly, interface) | ~3,300 | ~2,700 (Python) | ~2,800 + 270 host hooks |
+| Lines (solver, assembly, interface) | ~3,300 fluid + ~2,200 FSI | ~2,700 fluid + ~1,500 FSI (Python) | ~2,800 fluid + ~1,200 FSI + 450 host hooks |
 | iliac artery, 20 steps | 11.7 s | 9.1 s | 7.2 s |
 | Pipe, 10 steps | 43.9 s | 33.0 s | 32.5 s |
+| FSI pipe, 5 steps | 17.0 s | 31.7 s | 24.4 s |
 | Runs on the CPU from the same source | no | no (Warp has a CPU backend, not used) | yes (`SVMFEM_DEVICE=cpu` or `omp`; 76 s on 10 cores for the iliac case) |
 | Portability | NVIDIA only | NVIDIA only (Warp) | CUDA, HIP, OpenMP, CPU (MFEM backends) |
 | Dependencies | CUDA toolkit | Python, warp-lang, NumPy, SciPy, PyAMG (optional) | CUDA toolkit, MFEM (patched on Windows) |

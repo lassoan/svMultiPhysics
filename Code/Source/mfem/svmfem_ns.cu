@@ -51,52 +51,6 @@ constexpr int VW = 2;
 constexpr int KW = VW + 2 * MAXF;
 constexpr int GH = KW + 2 * MAXF;
 
-/// Slots of a multi-value reduction: slot j is base + j, or s[j] when a
-/// list of n slots is given (face dots, non-contiguous)
-struct SlotList {
-  int base, n;
-  int s[2 * MAXF + 1];
-  MFEM_HOST_DEVICE int slot(int j) const { return n > 0 ? s[j] : base + j; }
-};
-
-/// Multi-value block reduction: body(i, j) for i < n, j < m; the sums are
-/// added atomically to sc[sl.s[j]]. The values are reduced in chunks of NR.
-template <int NR, typename BODY> void launch_red_multi(int n, int m, double* sc, SlotList sl, BODY&& body)
-{
-  const int nb = blocks(n);
-  if (nb == 0 || m == 0) return;
-  if (sl.n > 0 && m > sl.n) fail("too many reduction slots");
-  mfem::forall_2D(nb, TPB, 1, [=] MFEM_HOST_DEVICE (int blk) {
-    MFEM_SHARED double sh[NR][TPB];
-    for (int j0 = 0; j0 < m; j0 += NR) {
-      MFEM_FOREACH_THREAD(t, x, TPB) {
-        const int i = blk * TPB + t;
-        for (int k = 0; k < NR; k++) sh[k][t] = (i < n && j0 + k < m) ? body(i, j0 + k) : 0.0;
-      }
-      MFEM_SYNC_THREAD;
-      for (int s = TPB / 2; s > 0; s >>= 1) {
-        MFEM_FOREACH_THREAD(t, x, TPB) {
-          if (t < s) {
-            for (int k = 0; k < NR; k++) sh[k][t] += sh[k][t + s];
-          }
-        }
-        MFEM_SYNC_THREAD;
-      }
-      MFEM_FOREACH_THREAD(t, x, TPB) {
-        if (t < NR && j0 + t < m) AtomicAdd(sc[sl.slot(j0 + t)], sh[t][0]);
-      }
-      MFEM_SYNC_THREAD;
-    }
-  });
-}
-
-inline SlotList range_slots(int s0, int)
-{
-  SlotList sl{};
-  sl.base = s0;
-  return sl;
-}
-
 struct SubLs {
   int mItr, sD;
   double absTol, relTol;
