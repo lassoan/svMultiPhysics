@@ -36,7 +36,12 @@ void init_device(const char* dev)
   std::string name = dev ? dev : "";
   if (name.empty()) name = getenv("SVMFEM_DEVICE") ? getenv("SVMFEM_DEVICE") : "cuda";
 #ifndef MFEM_USE_CUDA
-  if (name != "cpu") {
+#ifdef MFEM_USE_OPENMP
+  const bool known = name == "cpu" || name == "omp";
+#else
+  const bool known = name == "cpu";
+#endif
+  if (!known) {
     fprintf(stderr, "svmfem: built without CUDA, running on the CPU\n");
     name = "cpu";
   }

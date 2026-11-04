@@ -4,18 +4,25 @@ This directory contains an experimental implementation of the per-time-step comp
 
 ## Summary
 
-| Case | CPU, 10 MPI processes | CUDA (`gpu-exp`) | Warp (`warp-exp`) | MFEM (this branch) | Speedup |
+| Case | svMultiPhysics, 10 MPI processes | CUDA (`gpu-exp`) | Warp (`warp-exp`) | MFEM, GPU (this branch) | Speedup |
 |---|---|---|---|---|---|
 | `tests/cases/fluid/iliac_artery`, 75,819 tetrahedra, 20 time steps | 106 s | 11.7 s | 9.1 s | **7.2 s** | **15×** |
 | Pipe (`Code/Source/gpu/make_pipe.py`), 1,002,240 tetrahedra, 10 time steps | 1,631 s | 43.9 s | 33.0 s | **32.5 s** | **50×** |
 
-Hardware: Intel Core i9-10900X (10 cores) and NVIDIA GeForce RTX 3090, Windows 11. CPU times are with the clang-cl build with mimalloc and AVX2 (branch `msvc-build`). The MFEM results agree with the CPU results within 7·10⁻¹⁴ (iliac artery) and 2·10⁻¹⁰ (pipe) relative difference, with the same Newton and linear iteration counts as the Warp version.
+The same MFEM code on the CPU only (MFEM built without CUDA, the library compiled as plain C++; MFEM's `cpu` backend on one thread and `omp` backend on 10 threads), against the svMultiPhysics CPU code of the same build:
+
+| Case | svMultiPhysics, 1 process | svMultiPhysics, 10 MPI processes | MFEM, 1 thread | MFEM, 10 OpenMP threads | MFEM, GPU |
+|---|---|---|---|---|---|
+| iliac artery, 20 time steps | 592 s | 95 s | 301 s | **76 s** | 7.2 s |
+| Pipe, 10 time steps | (not run) | 1,631 s | 2,031 s | **386 s** | 32.5 s |
+
+Hardware: Intel Core i9-10900X (10 cores) and NVIDIA GeForce RTX 3090, Windows 11. CPU times are with the clang-cl build with mimalloc and AVX2 (branch `msvc-build`; the 106 s of the first table is the build without AVX2, used by the two other experiments). The MFEM results agree with the CPU results within 7·10⁻¹⁴ (iliac artery) and 2·10⁻¹⁰ (pipe) relative difference, with the same Newton and linear iteration counts as the Warp version; the CPU backends give identical residuals to the GPU.
 
 Main conclusions:
 
 - **MFEM's kernel model costs nothing in performance once the kernels are designed for it.** The solver has the same structure as the Warp version: fused kernels, device-resident scalars, mapped host memory for the few values the host needs, every phase captured in a CUDA graph. `mfem::forall` kernels can be captured in CUDA graphs (the library is compiled with the per-thread default stream), and `mfem::forall_2D` gives the block-level cooperation that fused reductions need. The MFEM version is the fastest of the three on both meshes, mostly because it combines the small-mesh design of the Warp version with C++ host code (no interpreter overhead) and the SELL layout of the Warp version.
 - **MFEM's generic pieces are used for the setup, not for the iterations.** `mfem::SparseMatrix` computes the pattern of the Schur complement (`Aᵀ·A`) and MFEM's memory manager owns every array; the Krylov solvers, the sparse products and the preconditioner are custom kernels, because MFEM's `CGSolver`/`GMRESSolver` synchronize with the host at every dot product (about 100 µs each on Windows), which would cost a factor of 3-5 on the small mesh, and because the FSILS algorithm (block structure, resistance faces, convergence criteria) has no counterpart in MFEM. Without hypre (MPI), MFEM has no AMG; the aggregation AMG of the Warp version was ported (about 450 lines).
-- **The same source runs on the CPU.** With `SVMFEM_DEVICE=cpu` all kernels run on the host through MFEM's CPU backend and produce the same results (the 2-step iliac case takes 31 s on one core instead of 1.3 s on the GPU, with identical residuals). This is the property that the CUDA experiment recommended for GPU support of the physics code: the element routines exist once, with `MFEM_HOST_DEVICE`.
+- **The same source runs on the CPU, and is faster there than the current CPU code.** With MFEM built without CUDA the library compiles as plain C++ (`SVMFEM_CUDA=OFF`), and `SVMFEM_DEVICE=cpu` or `omp` runs every kernel on the host through MFEM's CPU or OpenMP backend with identical residuals. On 10 threads it beats svMultiPhysics on 10 MPI processes by 1.25× on the iliac artery and 4.2× on the pipe, on one thread it beats one MPI process by 2× on the iliac artery and comes within 25% of 10 MPI processes on the pipe. Most of this is the algorithm (the AMG-preconditioned Schur CG converges in about 120-190 iterations where the unpreconditioned FSILS CG stops at its 300-iteration limit) rather than the kernels: the OpenMP speedup of the solver kernels is only 3.4× on 10 cores (memory bound, atomic reductions), and the assembly with atomic additions gains 6.4×. This is the property that the CUDA experiment recommended for GPU support of the physics code: the element routines exist once, with `MFEM_HOST_DEVICE`, and a CPU-only build needs no CUDA toolkit at all.
 - **MFEM on Windows with CUDA is unsupported territory.** MFEM 4.10 does not build with nvcc and MSVC without patches (see below), and nvcc's extended lambdas on Windows have restrictions that the Linux builds never hit (external linkage and public access of the enclosing function, no lambdas in inline header functions). None of this is a problem on Linux.
 
 ## Building and running
@@ -48,7 +55,19 @@ Steps (from an *x64 Native Tools Command Prompt for VS 2022*, with the CUDA tool
 3. Configure svMultiPhysics with `-DSV_MFEM_DIR=<path of svmfem-build>` and build it (`svmfem.dll` is copied next to `svmultiphysics.exe`; the CUDA runtime, cuSPARSE and cuBLAS DLLs of the toolkit must be in the `PATH`).
 4. Run with one process and the environment variables `SV_MFEM=1` (GPU linear solver) and `SV_MFEM_ASSEM=1` (GPU assembly). Without these variables, the CPU code is used.
 
-Other environment variables: `SVMFEM_DEVICE=cpu` runs the same kernels on the host through MFEM's CPU backend, `SVMFEM_NOGRAPH=1` launches the kernels one by one instead of CUDA graphs, `SVMFEM_TIMING=1` and `SV_LS_STATS=1` print timings and iteration counts, `SV_GPU_VERBOSE=1` prints the setup, `SVMFEM_DEBUG=1` traces the phases, `SVMFEM_AMG_W`, `SVMFEM_AMG_WC`, `SVMFEM_AMG_CAND`, `SVMFEM_AMG_CMAX` and `SVMFEM_CG_CHUNK` are the AMG and CG parameters of the Warp version.
+CPU-only build (no CUDA toolkit; MFEM with the OpenMP backend, built in parallel with MSBuild since no nvcc is involved; the LLVM OpenMP runtime is needed for MFEM's `min`/`max` reductions with MSVC):
+```
+cmake -S mfem-src -B mfem-build-cpu -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX=mfem-install-cpu -DMFEM_USE_CUDA=NO ^
+  -DMFEM_USE_OPENMP=YES "-DOpenMP_CXX_FLAGS=/openmp:llvm" -DOpenMP_CXX_LIB_NAMES=libomp -DOpenMP_libomp_LIBRARY=libomp.lib ^
+  -DMFEM_USE_MPI=NO "-DCMAKE_CXX_FLAGS=-D_USE_MATH_DEFINES /EHsc /DWIN32 /D_WINDOWS" -DMFEM_ENABLE_EXAMPLES=OFF -DMFEM_ENABLE_MINIAPPS=OFF -DMFEM_ENABLE_TESTING=OFF
+cmake --build mfem-build-cpu --config Release --target install --parallel 10
+cmake -S Code/Source/mfem -B svmfem-cpu-build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DSVMFEM_CUDA=OFF ^
+  "-DOpenMP_CXX_FLAGS=/openmp:llvm" -DOpenMP_CXX_LIB_NAMES=libomp -DOpenMP_libomp_LIBRARY=libomp.lib -DMFEM_DIR=<mfem-install-cpu>/lib/cmake/mfem
+cmake --build svmfem-cpu-build
+```
+The resulting `svmfem.dll` has the same interface and can replace the CUDA one next to `svmultiphysics.exe`; run with `SVMFEM_DEVICE=omp` and `OMP_NUM_THREADS=<cores>` (or `SVMFEM_DEVICE=cpu` for one thread).
+
+Other environment variables: `SVMFEM_DEVICE=cpu` (or `omp` with the CPU-only build) runs the same kernels on the host through MFEM's CPU or OpenMP backend, `SVMFEM_NOGRAPH=1` launches the kernels one by one instead of CUDA graphs, `SVMFEM_TIMING=1` and `SV_LS_STATS=1` print timings and iteration counts, `SV_GPU_VERBOSE=1` prints the setup, `SVMFEM_DEBUG=1` traces the phases, `SVMFEM_AMG_W`, `SVMFEM_AMG_WC`, `SVMFEM_AMG_CAND`, `SVMFEM_AMG_CMAX` and `SVMFEM_CG_CHUNK` are the AMG and CG parameters of the Warp version.
 
 Supported cases are those of the other two experiments: one process; fluid equation with linear tetrahedra, VMS stabilization, one domain with constant viscosity, no moving mesh, no RIS valves, resistance (coupled Neumann) faces without caps, FSILS preconditioner and `NS` linear solver. Other cases use the CPU code or stop with an error.
 
@@ -94,6 +113,17 @@ Per Newton iteration (solve and assembly, from `SVMFEM_TIMING=1`):
 
 Without CUDA graphs (`SVMFEM_NOGRAPH=1`) the iliac case takes 8.7 s instead of 7.2 s (29 ms instead of 22 ms per solve): a kernel launched directly costs about 9 µs on this machine (WDDM driver), a kernel inside a graph about 3 µs, and the solve of the small mesh runs about 2,000 kernels per Newton iteration.
 
+The same kernels on the CPU (per Newton iteration; the svMultiPhysics CPU code takes 3.2 s on one process and 0.52 s on 10 processes on the iliac artery):
+
+| | iliac artery, 1 thread | iliac artery, 10 OpenMP threads | pipe, 10 OpenMP threads |
+|---|---|---|---|
+| Assembly | 527 ms | 82 ms | 904 ms |
+| Solve | 1,089 ms | 316 ms | 3,450 ms |
+| of which Schur complement CG | 494 ms (4.2 ms/iteration) | 169 ms (1.4 ms/iteration) | 2,029 ms (10.6 ms/iteration) |
+| of which GMRES | 398 ms (7.7 ms/step) | 103 ms (2.0 ms/step) | 1,077 ms (13.9 ms/step) |
+
+The GPU kernels were designed for the GPU (one thread per row, SELL layout, atomic reductions per 256-element block, float AMG): on the CPU they are correct but not tuned, which is the price of single-source code; an OpenMP-aware layout (rows per thread, no atomics in the reductions) would help the CPU without changing the algorithm.
+
 ## nvcc and MSVC pitfalls
 
 These cost most of the debugging time; none of them exists with gcc or clang on Linux.
@@ -111,7 +141,7 @@ These cost most of the debugging time; none of them exists with gcc or clang on 
 | Lines (solver, assembly, interface) | ~3,300 | ~2,700 (Python) | ~2,800 + 270 host hooks |
 | iliac artery, 20 steps | 11.7 s | 9.1 s | 7.2 s |
 | Pipe, 10 steps | 43.9 s | 33.0 s | 32.5 s |
-| Runs on the CPU from the same source | no | no (Warp has a CPU backend, not used) | yes (`SVMFEM_DEVICE=cpu`) |
+| Runs on the CPU from the same source | no | no (Warp has a CPU backend, not used) | yes (`SVMFEM_DEVICE=cpu` or `omp`; 76 s on 10 cores for the iliac case) |
 | Portability | NVIDIA only | NVIDIA only (Warp) | CUDA, HIP, OpenMP, CPU (MFEM backends) |
 | Dependencies | CUDA toolkit | Python, warp-lang, NumPy, SciPy, PyAMG (optional) | CUDA toolkit, MFEM (patched on Windows) |
 | Build on Windows | nvcc, 1 minute | none (JIT at run time, 1 s startup) | MFEM 8 minutes (parallel) + nvcc 2 minutes |
