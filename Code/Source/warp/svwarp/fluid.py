@@ -30,6 +30,7 @@ class FluidParams:
     am: wp.float64
     gam: wp.float64
     brink: wp.float64     # Brinkman inverse permeability
+    mvMsh: wp.int32       # moving mesh (ALE): the convection velocity is relative to the mesh velocity ylm
 
 
 @wp.func
@@ -82,7 +83,7 @@ def gnn(Nxi: mat34, xl: mat34):
 
 @wp.func
 def fluid_3d_m(prm: FluidParams, w: wp.float64, Kxi: wp.mat33d, N: vec4, Nx: mat34, al: mat44, yl: mat44,
-               bfl: mat34, lR: mat44, lK: mat16x16):
+               ylm: mat34, bfl: mat34, lR: mat44, lK: mat16x16):
     """Momentum equation at one Gauss point (fluid_3d_m). lR(i,a) and
     lK(k, 4a+b) are accumulated. Linear elements: Nxx = 0, mu_g = mu_x = 0."""
     dt = prm.dt
@@ -125,6 +126,13 @@ def fluid_3d_m(prm: FluidParams, w: wp.float64, Kxi: wp.mat33d, N: vec4, Nx: mat
         px[0] = px[0] + Nx[0, a] * yl[3, a]
         px[1] = px[1] + Nx[1, a] * yl[3, a]
         px[2] = px[2] + Nx[2, a] * yl[3, a]
+
+    # Convection velocity relative to the mesh velocity
+    if prm.mvMsh != 0:
+        for a in range(4):
+            u[0] = u[0] - N[a] * ylm[0, a]
+            u[1] = u[1] - N[a] * ylm[1, a]
+            u[2] = u[2] - N[a] * ylm[2, a]
 
     # Strain rate tensor 2*e_ij := (u_i,j + u_j,i)
     es = wp.mat33d()
@@ -266,7 +274,7 @@ def fluid_3d_m(prm: FluidParams, w: wp.float64, Kxi: wp.mat33d, N: vec4, Nx: mat
 
 @wp.func
 def fluid_3d_c(prm: FluidParams, w: wp.float64, Kxi: wp.mat33d, N: vec4, Nx: mat34, al: mat44, yl: mat44,
-               bfl: mat34, lR: mat44, lK: mat16x16):
+               ylm: mat34, bfl: mat34, lR: mat44, lK: mat16x16):
     """Continuity equation at one Gauss point (fluid_3d_c)."""
     dt = prm.dt
     ctM = F(1.0)
@@ -304,6 +312,12 @@ def fluid_3d_c(prm: FluidParams, w: wp.float64, Kxi: wp.mat33d, N: vec4, Nx: mat
         px[0] = px[0] + Nx[0, a] * yl[3, a]
         px[1] = px[1] + Nx[1, a] * yl[3, a]
         px[2] = px[2] + Nx[2, a] * yl[3, a]
+
+    if prm.mvMsh != 0:
+        for a in range(4):
+            u[0] = u[0] - N[a] * ylm[0, a]
+            u[1] = u[1] - N[a] * ylm[1, a]
+            u[2] = u[2] - N[a] * ylm[2, a]
 
     kT = F(4.0) * ((ctM / dt) * (ctM / dt))
     kT = kT + (brink * mu / rho) * (brink * mu / rho)
@@ -379,15 +393,16 @@ def k_fluid(IEN: wp.array2d(dtype=wp.int32), x: wp.array2d(dtype=wp.float64), Ag
             yl[i, a] = Yg[Ac, i]
     lR = mat44()
     lK = mat16x16()
+    ylm = mat34()
     Nx, Jac, ks = gnn(Nxi, xl)
     for g in range(nG):
         w = gw[g] * Jac
         N = vec4(gN[g, 0], gN[g, 1], gN[g, 2], gN[g, 3])
-        lR, lK = fluid_3d_m(prm, w, ks, N, Nx, al, yl, bfl, lR, lK)
+        lR, lK = fluid_3d_m(prm, w, ks, N, Nx, al, yl, ylm, bfl, lR, lK)
     for g in range(nG):
         w = gw[g] * Jac
         N = vec4(gN[g, 0], gN[g, 1], gN[g, 2], gN[g, 3])
-        lR, lK = fluid_3d_c(prm, w, ks, N, Nx, al, yl, bfl, lR, lK)
+        lR, lK = fluid_3d_c(prm, w, ks, N, Nx, al, yl, ylm, bfl, lR, lK)
     for a in range(4):
         rowN = IEN[e, a]
         for i in range(4):

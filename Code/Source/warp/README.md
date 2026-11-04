@@ -1,6 +1,6 @@
 # GPU acceleration with NVIDIA Warp (experiment)
 
-This directory contains an experimental GPU implementation of the per-time-step computation of the fluid equation with rigid walls (CFD): the element assembly and the FSILS NS linear solver, written in Python with [NVIDIA Warp](https://github.com/NVIDIA/warp) and called from svMultiPhysics through an embedded Python interpreter. It is the Warp counterpart of the hand-written CUDA experiment on the `gpu-exp` branch (`Code/Source/gpu`), with the same hooks into svMultiPhysics, so that the two approaches can be compared. It is not a production feature.
+This directory contains an experimental GPU implementation of the per-time-step computation of the fluid equation with rigid walls (CFD) and of FSI (see below): the element assembly and the FSILS linear solvers, written in Python with [NVIDIA Warp](https://github.com/NVIDIA/warp) and called from svMultiPhysics through an embedded Python interpreter. It is the Warp counterpart of the hand-written CUDA experiment on the `gpu-exp` branch (`Code/Source/gpu`), with the same hooks into svMultiPhysics, so that the two approaches can be compared. It is not a production feature.
 
 ## Summary
 
@@ -8,6 +8,7 @@ This directory contains an experimental GPU implementation of the per-time-step 
 |---|---|---|---|---|
 | `tests/cases/fluid/iliac_artery`, 20 time steps | 75,819 tetrahedra, 15,334 nodes | 106.3 s | 9.1 s (**12×**) | 11.7 s (9×) |
 | Pipe (`Code/Source/gpu/make_pipe.py`), 10 time steps | 1,002,240 tetrahedra, 181,875 nodes | 1,631 s | 33.0 s (**49×**) | 43.9 s (37×) |
+| FSI pipe (`Code/Source/gpu/make_fsi_pipe.py`), 5 time steps | 1,244,160 tetrahedra, 220,409 nodes | 885 s | 31.7 s (**28×**) | 17.0 s (52×) |
 
 Hardware: Intel Core i9-10900X (10 cores) and NVIDIA GeForce RTX 3090, Windows 11, Warp 1.19. Times are the solver times reported by svMultiPhysics (the CPU runs use the default Windows build: clang-cl, mimalloc). The results agree with the CPU results within 7·10⁻¹⁴ (iliac artery) and 2·10⁻¹⁰ (pipe) relative difference; the Newton iteration counts are the same as on the CPU (86 for the pipe, 184 for the iliac artery).
 
@@ -33,7 +34,7 @@ Main conclusions:
 
 Other environment variables: `SV_LS_STATS=1` (iteration counts of every solve), `SVWARP_TIMING=1` (time per solve: Schur setup, GMRES, CG, assembly), `SV_GPU_VERBOSE=1` (setup information), `SVWARP_FMA=1` (fused multiply-add in the assembly kernel: 10% faster assembly, results differ from the CPU in the last digits), `SVWARP_CG_CHUNK` (CG iterations per convergence check, default 8 for small meshes down to 2 for large ones), `SVWARP_AMG_W` (Jacobi damping, default 4/3), `SVWARP_AMG_CAND` and `SVWARP_AMG_WC` (relaxation sweeps and damping of the prolongator weights, default 16 and 1), `SVWARP_AMG_CMAX` (size of the coarsest level, default 512), `SVWARP_AMG_GRAPH=mesh` (aggregation on the mesh graph instead of the Schur complement graph), `SVWARP_NOGRAPH=1` and `SVWARP_DEBUG=1` (no CUDA graphs, CUDA error checking after every kernel), `SVWARP_PROFILE=1` (GPU time of every kernel of the first launch of every solver phase; the times of small kernels include launch gaps), `SVWARP_DUMP=<file>` (dump of a Schur system for offline tests).
 
-Supported cases: one process; fluid equation with linear tetrahedra, VMS stabilization (`nFs = 1`), one mesh and one domain with constant viscosity, no moving mesh, no RIS valves, up to 8 resistance (coupled Neumann) faces without caps, FSILS preconditioner and `NS` linear solver. Other cases use the CPU code or stop with an error.
+Supported cases: one process; fluid equation with linear tetrahedra, VMS stabilization (`nFs = 1`), one mesh and one domain with constant viscosity, no moving mesh, no RIS valves, up to 8 resistance (coupled Neumann) faces without caps, FSILS preconditioner and `NS` linear solver; FSI with linear tetrahedra, one fluid and one wall domain (one domain per mesh), constant fluid viscosity, neo-Hookean wall with the M94 volumetric model, no solid viscosity, active stress or prestress, mesh motion with linear elasticity, GMRES and CG with the FSILS preconditioner, no coupled faces (`SVWARP_AMG=0` for the plain FSILS algorithms, `SVWARP_AMG_CMAX` for the size of the coarsest AMG level, default 128 nodes). Other cases use the CPU code or stop with an error.
 
 ## Files
 
@@ -46,7 +47,9 @@ Supported cases: one process; fluid equation with linear tetrahedra, VMS stabili
 | `svwarp/ns.py` | FSILS NS solver: GMRES on the momentum block, AMG-preconditioned CG on the Schur complement, as CUDA graphs |
 | `svwarp/amg.py` | Aggregation AMG preconditioner |
 | `svwarp/common.py` | Types, mapped host memory |
-| `../solver/svwarp_host.cpp` | Embedded Python interpreter, the hooks of `construct_fluid`, `FsilsLinearAlgebra::assemble` and `fsils_solve` |
+| `svwarp/fsi.py` | FSI: assembly kernels of the ALE fluid, neo-Hookean wall and mesh motion equations, device matrices for dof = 3 and 4 |
+| `svwarp/bls.py` | FSI: block SELL products, aggregation AMG for the dof × dof block matrix, GMRES and CG for dof = 3 and 4 (closure kernels generated per block size) |
+| `../solver/svwarp_host.cpp`, `../solver/svwarp_fsi_host.cpp` | Embedded Python interpreter, the hooks of `construct_fluid`, `construct_fsi`, `construct_mesh`, `FsilsLinearAlgebra::assemble` and `fsils_solve` |
 
 Changes outside this directory: `solver/physics/fluid/src/fluid.cpp` (one call at the start of `construct_fluid`), `solver/FsilsLinearAlgebra.cpp` (face terms staged for the device matrix, no reallocation of the host matrix), `linear_solver/solve.cpp` (GPU path of `fsils_solve`), and the CMake files (`SV_USE_WARP`).
 
@@ -81,6 +84,27 @@ Changes outside this directory: `solver/physics/fluid/src/fluid.cpp` (one call a
 | Schur setup | 0.011 s | Gᵀ G (2.6M entries of G, 10.9M of S), AMG weights and coarse matrices, power iterations, 80×80 inverse |
 | Preconditioner, copies, host | 0.01 s | |
 
+## FSI
+
+The FSI case is `tests/cases/fsi/pipe_3d` on larger meshes (`Code/Source/gpu/make_fsi_pipe.py` of the CUDA branch: lumen radius 1, wall thickness 0.2, length 10, conforming tetrahedral meshes): ALE fluid in the current configuration with the mesh velocity, neo-Hookean wall with the M94 volumetric penalty, linear elastic mesh motion, 5 time steps. The FSI equation is solved with GMRES (dof = 4, Krylov space 50), the mesh motion with CG (dof = 3), both with the FSILS diagonal preconditioner on the CPU and with an additional aggregation AMG V-cycle on the GPU (right preconditioner of GMRES, preconditioner of CG; `SVWARP_AMG=0` selects the plain FSILS algorithms, which then reproduce the CPU iteration counts of the CG exactly and the fields within 10⁻¹⁴).
+
+| Mesh | svMultiPhysics, 10 MPI processes | CUDA (`gpu-exp`) | Warp (`warp-exp`) | MFEM (`mfem-exp`) |
+|---|---|---|---|---|
+| 192k tetrahedra (`mesh16`), 35,721 nodes | 63.1 s | 4.0 s | 7.0 s | 5.5 s |
+| 1.24M tetrahedra (`mesh32`, 983k fluid and 261k wall), 220,409 nodes | 885 s | 17.0 s | 31.7 s | 24.4 s |
+
+The CPU time is the current clang-cl build with AVX2 (`msvc-build`, 10 MPI processes); the CUDA branch measured 745 s for the same run with the build without AVX2. All versions take 35 Newton iterations of the FSI equation and 35 of the mesh equation on the 1.24M mesh with the same Newton residuals; the AMG brings the GMRES iterations of the run from 26,486 (CPU) to about 3,850 and the CG iterations from 9,896 to about 2,120. The velocity, pressure, displacement and stress fields agree with the CPU within 7·10⁻¹⁴ (MFEM) and 5·10⁻¹¹ (Warp) relative difference.
+
+The implementation (`fsi.py`, `bls.py`, about 1,500 lines, one day of work alongside the MFEM port) follows the CUDA branch and the MFEM version:
+
+- **Assembly**: `fluid_3d_m`/`fluid_3d_c` of `fluid.py` extended with the mesh velocity (`mvMsh`), `struct_3d` and `l_elas_3d` ported by hand from the CUDA kernels with Warp matrix types (a 24×3 matrix holds the strain-displacement matrices of the four nodes, a 9×16 matrix the mesh element matrix), one kernel per mesh and equation with atomic additions of 4×4 or 3×3 blocks.
+- **Closure kernels**: the solver and AMG kernels are generated per block size by `bls.make(DOF)`, a function whose Warp kernels capture `DOF` and the matrix types (`mat44d`, `mat33f`, ...) as constants; Warp compiles one module per block size (about 40 s the first time, cached afterwards).
+- **Block products** on arrays of Warp matrices in the SELL layout, two slots per loop iteration; the AMG hierarchy in `float32` matrices.
+- **AMG**: as in the MFEM version (aggregation of the node graph, piecewise constant prolongation, block Jacobi with the pseudo-inverse of the diagonal blocks, damping from a power iteration on the device, Galerkin sums by gather lists); the pseudo-inverse of the coarsest matrix (up to 512 unknowns) is `numpy.linalg.pinv` on the host, about 20 ms per solve.
+- **GMRES and CG** as in the MFEM version: one graph per Arnoldi step (normalization, V-cycle, product, modified Gram-Schmidt as one reduction kernel per basis vector, with grid-stride loops), the Hessenberg column through mapped memory; CG in chunks of two iterations per graph.
+
+Per Newton iteration on the 1.24M mesh: assembly 41 ms, GMRES 4.3 ms per Arnoldi step, CG 1.4 ms per iteration. The Warp version is 30% slower than the MFEM version on this mesh: the Arnoldi step costs 4.3 ms against 3.3 ms, mostly in the V-cycle (1.2 ms against 0.6 ms), whose float block matrices are arrays of 4×4 matrices (64-byte loads per thread) rather than the entry-major layout of the MFEM version; without the AMG the step costs 3.1 ms in both. The Python launch overhead is hidden by the graphs.
+
 ## Warp specifics learned
 
 - Python float literals are `float32` in kernels; double precision code needs `wp.float64(...)` everywhere.
@@ -96,5 +120,4 @@ Changes outside this directory: `solver/physics/fluid/src/fluid.cpp` (one call a
 ## Possible further work
 
 - Small meshes: the momentum products in single precision (halves the 17 MB of the 3×3 blocks of the iliac artery per Arnoldi step), two Arnoldi steps per graph, a faster element kernel (one warp per element so that the 16×16 element matrix stays in registers).
-- FSI (ALE fluid, neo-Hookean wall, mesh motion): the FSI kernels of the CUDA branch would port the same way; GMRES and CG for dof 3 and 4 need the generic block products.
 - Multi-GPU through MPI would need halo exchanges in the solver.

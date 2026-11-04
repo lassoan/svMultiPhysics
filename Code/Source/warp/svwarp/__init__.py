@@ -17,7 +17,9 @@ import numpy as np
 import warp as wp
 
 from .common import DEVICE, F, host_array, host_numpy, mat34, mat44, to_device, vec4
+from . import bls
 from . import fluid as fl
+from . import fsi as fsimod
 from . import linalg as la
 from . import ns as nsmod
 
@@ -113,6 +115,7 @@ def fluid_assemble(tDof, Ag, Yg, Bf, rho, mu, fx, fy, fz, dt, af, am, gam, brink
     prm.rho, prm.mu = F(rho), F(mu)
     prm.f = wp.vec3d(F(fx), F(fy), F(fz))
     prm.dt, prm.af, prm.am, prm.gam, prm.brink = F(dt), F(af), F(am), F(gam), F(brink)
+    prm.mvMsh = 0
     lhs = s["lhs"]
     lhs.Val.zero_()
     s["R"].zero_()
@@ -145,6 +148,81 @@ def precond_diag(Dmul, W):
     wp.synchronize_device(DEVICE)
     _timed("precond", t0)
     return 0
+
+
+# ---------------------------------------------------------------------------
+# FSI: assembly of the FSI and mesh motion equations, GMRES and CG for
+# dof = 3 and 4 (fsi.py, bls.py)
+
+def fsi_setup(tnNo, x, nnz, rowPtr, colPtr):
+    """Node coordinates (3 x tnNo) and the matrix structure (CSR)."""
+    _state["fsi"] = fsimod.Fsi(int(tnNo), x, int(nnz), rowPtr, colPtr)
+    return 0
+
+
+def fsi_add_mesh(nEl, IEN, nG, w, N, Nxi):
+    """Add a mesh (IEN: 4 x nEl, Gauss data as fluid_setup); returns its index."""
+    return _state["fsi"].add_mesh(int(nEl), IEN, int(nG), w, N, Nxi)
+
+
+def fsi_assemble(mesh, type_, tDof, Ag, Yg, Dg, Do, Bf, params, R):
+    """Assemble one mesh into the device matrix (added) and add the residual
+    to R (host, dof x tnNo). type: 0 = FSI fluid, 1 = FSI struct, 2 = mesh
+    motion; params: 12 doubles (see fsi.Fsi.assemble)."""
+    _state["fsi"].assemble(int(mesh), int(type_), int(tDof), Ag, Yg, Dg, Do, Bf, params, R)
+    return 0
+
+
+def add_vals_dof(n, dof, ptr, vals):
+    """Add n staged dof x dof blocks (host) at the block indices ptr (host)."""
+    t0 = time.perf_counter()
+    n, dof = int(n), int(dof)
+    if n:
+        f = _state["fsi"]
+        K = bls.kernels(dof)
+        if n > f.stage_cap:
+            f.stage_cap = 2 * n
+            f.stage_ptr = wp.empty(f.stage_cap, dtype=wp.int32, device=DEVICE)
+            f.stage_val = {d: wp.empty(f.stage_cap, dtype=bls.kernels(d)["MAT"], device=DEVICE) for d in (3, 4)}
+        wp.copy(f.stage_ptr, host_array(ptr, wp.int32, (n,)), count=n)
+        wp.copy(f.stage_val[dof], host_array(vals, K["MAT"], (n,)), count=n)
+        wp.launch(K["k_add_vals"], dim=n, inputs=[f.stage_ptr, f.stage_val[dof], f.val(dof)], device=DEVICE)
+    _timed("add_vals", t0)
+    return 0
+
+
+def precond_diag_dof(dof, Dmul, W):
+    """FSILS diagonal preconditioner of the device matrix for dof = 3 or 4;
+    Dmul, W: dof x nNo (host)."""
+    t0 = time.perf_counter()
+    dof = int(dof)
+    f = _state["fsi"]
+    K = bls.kernels(dof)
+    tnNo = f.tnNo
+    if not hasattr(f, "Dmul"):
+        f.Dmul = {d: wp.zeros((tnNo, d), dtype=F, device=DEVICE) for d in (3, 4)}
+        f.W = {d: wp.zeros((tnNo, d), dtype=F, device=DEVICE) for d in (3, 4)}
+    wp.copy(f.Dmul[dof], host_array(Dmul, F, (tnNo, dof)))
+    wp.launch(K["k_precond_w"], dim=tnNo, inputs=[f.lhs.diag, f.val(dof), f.Dmul[dof], f.W[dof]], device=DEVICE)
+    wp.launch(K["k_precond_scale"], dim=tnNo, inputs=[f.lhs.offsets, f.lhs.columns, f.W[dof], f.val(dof)],
+              device=DEVICE)
+    wp.copy(host_array(W, F, (tnNo, dof)), f.W[dof])
+    wp.synchronize_device(DEVICE)
+    _timed("precond", t0)
+    return 0
+
+
+def ls_solve(type_, dof, mItr, sD, absTol, relTol, R):
+    """FSILS GMRES (type 0) or CG (type 1) on the device matrix. R: dof x nNo
+    (host) right-hand side in, solution out. Returns (itr, success, iNorm,
+    fNorm, dB, time)."""
+    dof = int(dof)
+    f = _state["fsi"]
+    if dof not in f.solvers:
+        f.solvers[dof] = bls.LsSolver(dof, f.lhs, f.sell, f.val(dof))
+    st = f.solvers[dof].solve(int(type_), int(mItr), int(sD), float(absTol), float(relTol),
+                              host_array(R, F, (dof * f.tnNo,)))
+    return tuple(float(v) for v in st)
 
 
 def ns_solve(R, nFaces, glob, off, valM, res, RI_mItr, RI_sD, RI_absTol, RI_relTol, GM_mItr, GM_sD, GM_absTol,

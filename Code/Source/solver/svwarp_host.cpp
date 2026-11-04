@@ -102,10 +102,34 @@ bool val_on_device()
   return on_device;
 }
 
-void stage(int ptr, const double* vals)
+void set_on_device(bool on)
+{
+  on_device = on;
+}
+
+void stage(int ptr, const double* vals, int n)
 {
   stage_ptr.push_back(ptr);
-  stage_val.insert(stage_val.end(), vals, vals + 16);
+  stage_val.insert(stage_val.end(), vals, vals + n);
+}
+
+void fsi_setup(int tnNo, const double* x, int nnz, const int* rowPtr, const int* colPtr)
+{
+  call0("fsi_setup", tnNo, x, nnz, rowPtr, colPtr);
+}
+
+int fsi_add_mesh(int nEl, const int* IEN, int nG, const double* w, const double* N, const double* Nxi)
+{
+  PyObject* r = call("fsi_add_mesh", nEl, IEN, nG, w, N, Nxi);
+  int id = (int)PyLong_AsLong(r);
+  Py_DECREF(r);
+  return id;
+}
+
+void fsi_assemble(int mesh, int type, int tDof, const double* Ag, const double* Yg, const double* Dg,
+    const double* Do, const double* Bf, const double* params, double* R)
+{
+  call0("fsi_assemble", mesh, type, tDof, Ag, Yg, Dg, Do, Bf, params, R);
 }
 
 bool construct_fluid(ComMod& com_mod, const mshType& lM, const Array<double>& Ag, const Array<double>& Yg)
@@ -140,9 +164,15 @@ void fsils_solve(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS
 {
   using namespace fsi_linear_solver;
   const int nNo = lhs.nNo;
-  if (dof != 4) throw std::runtime_error("svwarp: the NS solver requires dof = 4");
+  const bool ns = ls.LS_type == LinearSolverType::LS_TYPE_NS;
+  if (ns && dof != 4) throw std::runtime_error("svwarp: the NS solver requires dof = 4");
+  if (!ns && dof != 3 && dof != 4) throw std::runtime_error("svwarp: GMRES and CG require dof = 3 or 4");
   // Face terms assembled on the host
-  call0("add_vals", (int)stage_ptr.size(), stage_ptr.data(), stage_val.data());
+  if (ns) {
+    call0("add_vals", (int)stage_ptr.size(), stage_ptr.data(), stage_val.data());
+  } else {
+    call0("add_vals_dof", (int)stage_ptr.size(), dof, stage_ptr.data(), stage_val.data());
+  }
   stage_ptr.clear();
   stage_val.clear();
   // Preconditioner: Dirichlet factors of precond_diag, W from the device
@@ -155,8 +185,33 @@ void fsils_solve(fsi_linear_solver::FSILS_lhsType& lhs, fsi_linear_solver::FSILS
       for (int i = 0; i < n; i++) Dmul(i, face.glob(a)) *= face.val(i, a);
     }
   }
-  call0("precond_diag", Dmul.data(), Wc.data());
+  if (ns) {
+    call0("precond_diag", Dmul.data(), Wc.data());
+  } else {
+    call0("precond_diag_dof", dof, Dmul.data(), Wc.data());
+  }
   for (int i = 0; i < R.size(); i++) R(i) = Wc(i) * R(i);
+  if (!ns) {
+    // GMRES and CG on the device matrix (no coupled faces)
+    for (auto& face : lhs.face) {
+      if (face.coupledFlag) throw std::runtime_error("svwarp: coupled faces are not supported with GMRES and CG");
+    }
+    const int type = (ls.LS_type == LinearSolverType::LS_TYPE_GMRES) ? 0 : 1;
+    PyObject* st = call("ls_solve", type, dof, ls.RI.mItr, ls.RI.sD, ls.RI.absTol, ls.RI.relTol, R.data());
+    double v[6];
+    for (int i = 0; i < 6; i++) v[i] = PyFloat_AsDouble(PyTuple_GetItem(st, i));
+    Py_DECREF(st);
+    ls.RI.itr = (int)v[0];
+    ls.RI.success = v[1] != 0.0;
+    ls.RI.iNorm = v[2];
+    ls.RI.fNorm = v[3];
+    ls.RI.dB = v[4];
+    ls.RI.callD = v[5];
+    if (getenv("SV_LS_STATS")) {
+      printf("LSSTATS-WARP type=%d dof=%d itr=%d time=%g" "\n", type, dof, ls.RI.itr, v[5]);
+    }
+    return;
+  }
   // Coupled (resistance) faces
   std::vector<int> glob, off{0};
   std::vector<double> valM, res;

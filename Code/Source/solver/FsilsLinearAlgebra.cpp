@@ -76,7 +76,7 @@ void FsilsLinearAlgebra::assemble(ComMod& com_mod, const int num_elem_nodes, con
           if (colN > colPtr(ptr)) left = ptr; else right = ptr;
           ptr = (right + left) / 2;
         }
-        svwarp_host::stage(ptr, &lK(0,a,b));
+        svwarp_host::stage(ptr, &lK(0,a,b), com_mod.dof * com_mod.dof);
       }
     }
     return;

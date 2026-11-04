@@ -43,10 +43,16 @@ class Sell:
         cols = np.zeros(total, dtype=np.int64)
         cols[q] = columns
         self.total = total
+        self.slice_off_np = slice_off
         self.slice_off = wp.array(slice_off.astype(np.int32), dtype=wp.int32, device=DEVICE)
         self.cols = wp.array(cols.astype(np.int32), dtype=wp.int32, device=DEVICE)
         self.map = wp.array(smap.astype(np.int32), dtype=wp.int32, device=DEVICE)
         self.padding = total / max(nnz, 1)
+
+    def slot(self, rows, k):
+        """SELL slot of entry k of row i (arrays)."""
+        rows = np.asarray(rows, dtype=np.int64)
+        return self.slice_off_np[rows // C] + np.asarray(k, dtype=np.int64) * C + rows % C
 
     def gather(self, V, Vs, kernel):
         """Vs[q] = V[map[q]] (0 for the padding)."""
