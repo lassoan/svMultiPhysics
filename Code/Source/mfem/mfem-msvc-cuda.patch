@@ -1,0 +1,1017 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4162042..f42b513 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -742,7 +742,8 @@ if (MINGW)
+   target_link_libraries(mfem PRIVATE ws2_32)
+ endif()
+ if (MSVC)
+-  target_compile_options(mfem PUBLIC "/wd4819")
++  # /wd4819 as a bare option is taken by nvcc as an input file
++  target_compile_options(mfem PUBLIC $<$<COMPILE_LANGUAGE:CXX>:/wd4819> $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/wd4819>)
+ endif()
+ message(STATUS "TPL_INCLUDE_DIRS = ${TPL_INCLUDE_DIRS}")
+ target_include_directories(mfem
+diff --git a/fem/bilinearform_ext.cpp b/fem/bilinearform_ext.cpp
+index 946e142..f836b9d 100644
+--- a/fem/bilinearform_ext.cpp
++++ b/fem/bilinearform_ext.cpp
+@@ -750,7 +750,7 @@ void PABilinearFormExtension::MultTranspose(const Vector &x, Vector &y) const
+ 
+ // Compute kernels for PABilinearFormExtension::AddMultWithMarkers.
+ // Cannot be in member function with non-public visibility.
+-static void AddWithMarkers_(
++void AddWithMarkers_(
+    const int ne,
+    const int nd,
+    const Vector &x,
+diff --git a/fem/gslib.cpp b/fem/gslib.cpp
+index 0a671eb..f17c120 100644
+--- a/fem/gslib.cpp
++++ b/fem/gslib.cpp
+@@ -134,7 +134,7 @@ namespace mfem
+ 
+ // Static helper to map device-side find-points outputs to MFEM reference-space
+ // data. nvcc does not allow lambdas in non-public members.
+-static void FindPointsDeviceSetCode(int pts_cnt,
++void FindPointsDeviceSetCode(int pts_cnt,
+                                     int ddim,
+                                     real_t rbtol,
+                                     real_t bdr_t,
+@@ -174,7 +174,7 @@ static void FindPointsDeviceSetCode(int pts_cnt,
+ 
+ // Static helper: scatter interpolated values back into field_out.
+ // nvcc does not allow lambdas in non-public members.
+-static void InterpolateDeviceScatter(int nlocal,
++void InterpolateDeviceScatter(int nlocal,
+                                      const int *d_index_temp,
+                                      const real_t *d_interp_vals,
+                                      real_t *d_field_out,
+diff --git a/fem/gslib/findpts_local_2.cpp b/fem/gslib/findpts_local_2.cpp
+index 36b0978..c0ff481 100644
+--- a/fem/gslib/findpts_local_2.cpp
++++ b/fem/gslib/findpts_local_2.cpp
+@@ -574,7 +574,7 @@ static MFEM_HOST_DEVICE double tensor_ig2_j(double *g_partials,
+ }
+ 
+ template<int T_D1D = 0>
+-static void FindPointsLocal2DKernel(const int npt,
++void FindPointsLocal2DKernel(const int npt,
+                                     const double tol,
+                                     const double *x,
+                                     const int point_pos_ordering,
+diff --git a/fem/gslib/findpts_local_3.cpp b/fem/gslib/findpts_local_3.cpp
+index 97c727d..3f0d001 100644
+--- a/fem/gslib/findpts_local_3.cpp
++++ b/fem/gslib/findpts_local_3.cpp
+@@ -921,7 +921,7 @@ static MFEM_HOST_DEVICE double tensor_ig3_j(double *g_partials,
+ }
+ 
+ template<int T_D1D = 0>
+-static void FindPointsLocal3DKernel(const int npt,
++void FindPointsLocal3DKernel(const int npt,
+                                     const double tol,
+                                     const double *x,
+                                     const int point_pos_ordering,
+diff --git a/fem/gslib/findptsedge_local_2.cpp b/fem/gslib/findptsedge_local_2.cpp
+index f286ab4..4ae2588 100644
+--- a/fem/gslib/findptsedge_local_2.cpp
++++ b/fem/gslib/findptsedge_local_2.cpp
+@@ -234,7 +234,7 @@ static MFEM_HOST_DEVICE void seed_j( const double *elx[sDIM],
+ }
+ 
+ template<int T_D1D = 0>
+-static void FindPointsEdgeLocal2DKernel( const int     npt,
++void FindPointsEdgeLocal2DKernel( const int     npt,
+                                          const double  tol,
+                                          const double  dist2tol,
+                                          const double  *x,
+diff --git a/fem/gslib/findptsedge_local_3.cpp b/fem/gslib/findptsedge_local_3.cpp
+index 9ffcbd1..dc6af24 100644
+--- a/fem/gslib/findptsedge_local_3.cpp
++++ b/fem/gslib/findptsedge_local_3.cpp
+@@ -240,7 +240,7 @@ static MFEM_HOST_DEVICE void seed_j(const double *elx[sDIM],
+ }
+ 
+ template<int T_D1D = 0>
+-static void FindPointsEdgeLocal3DKernel(const int npt,
++void FindPointsEdgeLocal3DKernel(const int npt,
+                                         const double tol,
+                                         const double dist2tol,
+                                         const double *x,
+diff --git a/fem/gslib/findptssurf_local_3.cpp b/fem/gslib/findptssurf_local_3.cpp
+index 6d339ce..c64ca88 100644
+--- a/fem/gslib/findptssurf_local_3.cpp
++++ b/fem/gslib/findptssurf_local_3.cpp
+@@ -559,7 +559,7 @@ static MFEM_HOST_DEVICE void seed_j(const double *elx[sDIM],
+ // global memory access of element coordinates.
+ // Are the structs being stored in "local memory" or registers?
+ template<int T_D1D = 0>
+-static void FindPointsSurfLocal3DKernel(const int npt,
++void FindPointsSurfLocal3DKernel(const int npt,
+                                         const double tol,
+                                         const double dist2tol,
+                                         const double *x,
+diff --git a/fem/gslib/interpolate_local_1.cpp b/fem/gslib/interpolate_local_1.cpp
+index 09f2095..2f02e84 100644
+--- a/fem/gslib/interpolate_local_1.cpp
++++ b/fem/gslib/interpolate_local_1.cpp
+@@ -36,7 +36,7 @@ namespace mfem
+ using gslib::lagrange_eval;
+ 
+ template<int T_D1D = 0>
+-static void InterpolateLocal1DKernel(const double *const gf_in,
++void InterpolateLocal1DKernel(const double *const gf_in,
+                                      int *const el,
+                                      double *const r,
+                                      double *const int_out,
+diff --git a/fem/gslib/interpolate_local_2.cpp b/fem/gslib/interpolate_local_2.cpp
+index 2f4fa94..ef6846f 100644
+--- a/fem/gslib/interpolate_local_2.cpp
++++ b/fem/gslib/interpolate_local_2.cpp
+@@ -36,7 +36,7 @@ namespace mfem
+ using gslib::lagrange_eval;
+ 
+ template<int T_D1D = 0>
+-static void InterpolateLocal2DKernel(const double *const gf_in,
++void InterpolateLocal2DKernel(const double *const gf_in,
+                                      int *const el,
+                                      double *const r,
+                                      double *const int_out,
+diff --git a/fem/gslib/interpolate_local_3.cpp b/fem/gslib/interpolate_local_3.cpp
+index e6284fa..8639752 100644
+--- a/fem/gslib/interpolate_local_3.cpp
++++ b/fem/gslib/interpolate_local_3.cpp
+@@ -36,7 +36,7 @@ namespace mfem
+ using gslib::lagrange_eval;
+ 
+ template<int T_D1D = 0>
+-static void InterpolateLocal3DKernel(const double *const gf_in,
++void InterpolateLocal3DKernel(const double *const gf_in,
+                                      int *const el,
+                                      double *const r,
+                                      double *const int_out,
+diff --git a/fem/integ/bilininteg_convection_ea.cpp b/fem/integ/bilininteg_convection_ea.cpp
+index 3a9e890..893783b 100644
+--- a/fem/integ/bilininteg_convection_ea.cpp
++++ b/fem/integ/bilininteg_convection_ea.cpp
+@@ -17,7 +17,7 @@ namespace mfem
+ {
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EAConvectionAssemble1D(const int NE,
++void EAConvectionAssemble1D(const int NE,
+                                    const Array<real_t> &b,
+                                    const Array<real_t> &g,
+                                    const Vector &padata,
+@@ -69,7 +69,7 @@ static void EAConvectionAssemble1D(const int NE,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EAConvectionAssemble2D(const int NE,
++void EAConvectionAssemble2D(const int NE,
+                                    const Array<real_t> &b,
+                                    const Array<real_t> &g,
+                                    const Vector &padata,
+@@ -146,7 +146,7 @@ static void EAConvectionAssemble2D(const int NE,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EAConvectionAssemble3D(const int NE,
++void EAConvectionAssemble3D(const int NE,
+                                    const Array<real_t> &b,
+                                    const Array<real_t> &g,
+                                    const Vector &padata,
+diff --git a/fem/integ/bilininteg_convection_pa.cpp b/fem/integ/bilininteg_convection_pa.cpp
+index aa8d831..79e9338 100644
+--- a/fem/integ/bilininteg_convection_pa.cpp
++++ b/fem/integ/bilininteg_convection_pa.cpp
+@@ -58,7 +58,7 @@ ConvectionIntegrator::Kernels::Kernels()
+ }
+ 
+ // PA Convection Assemble 2D kernel
+-static void PAConvectionSetup2D(const int NQ,
++void PAConvectionSetup2D(const int NQ,
+                                 const int NE,
+                                 const Array<real_t> &w,
+                                 const Vector &j,
+@@ -97,7 +97,7 @@ static void PAConvectionSetup2D(const int NQ,
+ }
+ 
+ // PA Convection Assemble 3D kernel
+-static void PAConvectionSetup3D(const int NQ,
++void PAConvectionSetup3D(const int NQ,
+                                 const int NE,
+                                 const Array<real_t> &w,
+                                 const Vector &j,
+diff --git a/fem/integ/bilininteg_dgdiffusion_pa.cpp b/fem/integ/bilininteg_dgdiffusion_pa.cpp
+index e78c834..19b3f16 100644
+--- a/fem/integ/bilininteg_dgdiffusion_pa.cpp
++++ b/fem/integ/bilininteg_dgdiffusion_pa.cpp
+@@ -20,7 +20,7 @@
+ namespace mfem
+ {
+ 
+-static void PADGDiffusionSetup2D(const int Q1D, const int NE, const int NF,
++void PADGDiffusionSetup2D(const int Q1D, const int NE, const int NF,
+                                  const Array<real_t> &w,
+                                  const GeometricFactors &el_geom,
+                                  const FaceGeometricFactors &face_geom,
+@@ -141,7 +141,7 @@ static void PADGDiffusionSetup2D(const int Q1D, const int NE, const int NF,
+    });
+ }
+ 
+-static void PADGDiffusionSetup3D(const int Q1D, const int NE, const int NF,
++void PADGDiffusionSetup3D(const int Q1D, const int NE, const int NF,
+                                  const Array<real_t> &w,
+                                  const GeometricFactors &el_geom,
+                                  const FaceGeometricFactors &face_geom,
+diff --git a/fem/integ/bilininteg_dgtrace_ea.cpp b/fem/integ/bilininteg_dgtrace_ea.cpp
+index 3dd6203..70ac2c1 100644
+--- a/fem/integ/bilininteg_dgtrace_ea.cpp
++++ b/fem/integ/bilininteg_dgtrace_ea.cpp
+@@ -16,7 +16,7 @@
+ namespace mfem
+ {
+ 
+-static void EADGTraceAssemble1DInt(const int NF,
++void EADGTraceAssemble1DInt(const int NF,
+                                    const Array<real_t> &basis,
+                                    const Vector &padata,
+                                    Vector &eadata_int,
+@@ -50,7 +50,7 @@ static void EADGTraceAssemble1DInt(const int NF,
+    });
+ }
+ 
+-static void EADGTraceAssemble1DBdr(const int NF,
++void EADGTraceAssemble1DBdr(const int NF,
+                                    const Array<real_t> &basis,
+                                    const Vector &padata,
+                                    Vector &eadata_bdr,
+@@ -72,7 +72,7 @@ static void EADGTraceAssemble1DBdr(const int NF,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADGTraceAssemble2DInt(const int NF,
++void EADGTraceAssemble2DInt(const int NF,
+                                    const Array<real_t> &basis,
+                                    const Vector &padata,
+                                    Vector &eadata_int,
+@@ -128,7 +128,7 @@ static void EADGTraceAssemble2DInt(const int NF,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADGTraceAssemble2DBdr(const int NF,
++void EADGTraceAssemble2DBdr(const int NF,
+                                    const Array<real_t> &basis,
+                                    const Vector &padata,
+                                    Vector &eadata_bdr,
+@@ -170,7 +170,7 @@ static void EADGTraceAssemble2DBdr(const int NF,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADGTraceAssemble3DInt(const int NF,
++void EADGTraceAssemble3DInt(const int NF,
+                                    const Array<real_t> &basis,
+                                    const Vector &padata,
+                                    Vector &eadata_int,
+@@ -268,7 +268,7 @@ static void EADGTraceAssemble3DInt(const int NF,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADGTraceAssemble3DBdr(const int NF,
++void EADGTraceAssemble3DBdr(const int NF,
+                                    const Array<real_t> &basis,
+                                    const Vector &padata,
+                                    Vector &eadata_bdr,
+diff --git a/fem/integ/bilininteg_dgtrace_pa.cpp b/fem/integ/bilininteg_dgtrace_pa.cpp
+index cef3ec4..68dd52b 100644
+--- a/fem/integ/bilininteg_dgtrace_pa.cpp
++++ b/fem/integ/bilininteg_dgtrace_pa.cpp
+@@ -21,7 +21,7 @@ namespace mfem
+ {
+ 
+ // PA DG Trace Integrator
+-static void PADGTraceSetup2D(const int Q1D, const int NF,
++void PADGTraceSetup2D(const int Q1D, const int NF,
+                              const Array<real_t> &w, const Vector &det,
+                              const Vector &nor, const Vector &rho,
+                              const Vector &vel, const real_t alpha,
+@@ -58,7 +58,7 @@ static void PADGTraceSetup2D(const int Q1D, const int NF,
+    });
+ }
+ 
+-static void PADGTraceSetup3D(const int Q1D, const int NF,
++void PADGTraceSetup3D(const int Q1D, const int NF,
+                              const Array<real_t> &w, const Vector &det,
+                              const Vector &nor, const Vector &rho,
+                              const Vector &vel, const real_t alpha,
+diff --git a/fem/integ/bilininteg_diffusion_ea.cpp b/fem/integ/bilininteg_diffusion_ea.cpp
+index c8e9ecb..b65a60c 100644
+--- a/fem/integ/bilininteg_diffusion_ea.cpp
++++ b/fem/integ/bilininteg_diffusion_ea.cpp
+@@ -17,7 +17,7 @@ namespace mfem
+ {
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADiffusionAssemble1D(const int NE,
++void EADiffusionAssemble1D(const int NE,
+                                   const Array<real_t> &b,
+                                   const Array<real_t> &g,
+                                   const Vector &padata,
+@@ -68,7 +68,7 @@ static void EADiffusionAssemble1D(const int NE,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADiffusionAssemble2D(const int NE,
++void EADiffusionAssemble2D(const int NE,
+                                   const Array<real_t> &b,
+                                   const Array<real_t> &g,
+                                   const Vector &padata,
+@@ -145,7 +145,7 @@ static void EADiffusionAssemble2D(const int NE,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EADiffusionAssemble3D(const int NE,
++void EADiffusionAssemble3D(const int NE,
+                                   const Array<real_t> &b,
+                                   const Array<real_t> &g,
+                                   const Vector &padata,
+diff --git a/fem/integ/bilininteg_gradient_pa.cpp b/fem/integ/bilininteg_gradient_pa.cpp
+index 056acec..eaad93c 100644
+--- a/fem/integ/bilininteg_gradient_pa.cpp
++++ b/fem/integ/bilininteg_gradient_pa.cpp
+@@ -70,7 +70,7 @@ namespace mfem
+    the \b MFEM_SHARED keyword for local arrays. */
+ 
+ // PA Gradient Assemble 2D kernel
+-static void PAGradientSetup2D(const int Q1D,
++void PAGradientSetup2D(const int Q1D,
+                               const int NE,
+                               const int MAP_TYPE,
+                               const Array<real_t> &w,
+@@ -111,7 +111,7 @@ static void PAGradientSetup2D(const int Q1D,
+ }
+ 
+ // PA Gradient Assemble 3D kernel
+-static void PAGradientSetup3D(const int Q1D,
++void PAGradientSetup3D(const int Q1D,
+                               const int NE,
+                               const int MAP_TYPE,
+                               const Array<real_t> &w,
+@@ -233,7 +233,7 @@ void GradientIntegrator::AssemblePA(const FiniteElementSpace &trial_fes,
+ 
+ // PA Gradient Apply 2D kernel
+ template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
+-static void PAGradientApply2D(const int NE,
++void PAGradientApply2D(const int NE,
+                               const Array<real_t> &b,
+                               const Array<real_t> &g,
+                               const Array<real_t> &bt,
+@@ -346,7 +346,7 @@ static void PAGradientApply2D(const int NE,
+ 
+ // PA Gradient Apply 2D kernel transpose
+ template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
+-static void PAGradientApplyTranspose2D(const int NE,
++void PAGradientApplyTranspose2D(const int NE,
+                                        const Array<real_t> &bt,
+                                        const Array<real_t> &gt,
+                                        const Array<real_t> &b,
+@@ -459,7 +459,7 @@ static void PAGradientApplyTranspose2D(const int NE,
+ 
+ // PA Gradient Apply 3D kernel
+ template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+-static void PAGradientApply3D(const int NE,
++void PAGradientApply3D(const int NE,
+                               const Array<real_t> &b,
+                               const Array<real_t> &g,
+                               const Array<real_t> &bt,
+@@ -638,7 +638,7 @@ static void PAGradientApply3D(const int NE,
+ 
+ // PA Gradient Apply 3D kernel
+ template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+-static void PAGradientApplyTranspose3D(const int NE,
++void PAGradientApplyTranspose3D(const int NE,
+                                        const Array<real_t> &bt,
+                                        const Array<real_t> &gt,
+                                        const Array<real_t> &b,
+@@ -824,7 +824,7 @@ static void PAGradientApplyTranspose3D(const int NE,
+ // for now, comment out
+ // Shared memory PA Gradient Apply 3D kernel
+ template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+-static void SmemPAGradientApply3D(const int NE,
++void SmemPAGradientApply3D(const int NE,
+                                   const Array<real_t> &b_,
+                                   const Array<real_t> &g_,
+                                   const Array<real_t> &bt_,
+diff --git a/fem/integ/bilininteg_hcurl_kernels.hpp b/fem/integ/bilininteg_hcurl_kernels.hpp
+index 8bf8c68..6d13226 100644
+--- a/fem/integ/bilininteg_hcurl_kernels.hpp
++++ b/fem/integ/bilininteg_hcurl_kernels.hpp
+@@ -1883,7 +1883,7 @@ inline void SmemPACurlCurlApply3D(const int d1d,
+ 
+    auto host_kernel = [&] MFEM_LAMBDA (int)
+    {
+-      MFEM_ABORT_KERNEL("This kernel should only be used on GPU.");
++      MFEM_ABORT("This kernel should only be used on GPU.");   // host lambda (MSVC: no asm)
+    };
+ 
+    ForallWrap<3>(true, NE, device_kernel, host_kernel, Q1D, Q1D, Q1D);
+@@ -2618,7 +2618,7 @@ inline void SmemPAHcurlL2Apply3D(const int d1d,
+ 
+    auto host_kernel = [&] MFEM_LAMBDA (int)
+    {
+-      MFEM_ABORT_KERNEL("This kernel should only be used on GPU.");
++      MFEM_ABORT("This kernel should only be used on GPU.");   // host lambda (MSVC: no asm)
+    };
+ 
+    ForallWrap<3>(true, NE, device_kernel, host_kernel, Q1D, Q1D, Q1D);
+@@ -3244,7 +3244,7 @@ inline void SmemPAHcurlL2ApplyTranspose3D(const int d1d,
+ 
+    auto host_kernel = [&] MFEM_LAMBDA (int)
+    {
+-      MFEM_ABORT_KERNEL("This kernel should only be used on GPU.");
++      MFEM_ABORT("This kernel should only be used on GPU.");   // host lambda (MSVC: no asm)
+    };
+ 
+    ForallWrap<3>(true, NE, device_kernel, host_kernel, Q1D, Q1D, Q1D);
+diff --git a/fem/integ/bilininteg_hdiv_ea.cpp b/fem/integ/bilininteg_hdiv_ea.cpp
+index bd63455..6564bf4 100644
+--- a/fem/integ/bilininteg_hdiv_ea.cpp
++++ b/fem/integ/bilininteg_hdiv_ea.cpp
+@@ -25,7 +25,7 @@ namespace mfem
+ //
+ // These two integrators are distinguished using coeff_dim.
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EAHdivAssemble2D(const int NE,
++void EAHdivAssemble2D(const int NE,
+                              const Array<real_t> &Bo_,
+                              const Array<real_t> &Bc_,
+                              const int coeff_dim,
+@@ -132,7 +132,7 @@ static void EAHdivAssemble2D(const int NE,
+ //
+ // These two integrators are distinguished using coeff_dim.
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void EAHdivAssemble3D(const int NE,
++void EAHdivAssemble3D(const int NE,
+                              const Array<real_t> &Bo_,
+                              const Array<real_t> &Bc_,
+                              const int coeff_dim,
+diff --git a/fem/integ/bilininteg_interp_pa.cpp b/fem/integ/bilininteg_interp_pa.cpp
+index ef25ef5..ca59de3 100644
+--- a/fem/integ/bilininteg_interp_pa.cpp
++++ b/fem/integ/bilininteg_interp_pa.cpp
+@@ -19,7 +19,7 @@
+ namespace mfem
+ {
+ 
+-namespace
++namespace win_internal_bilininteg_interp_pa_0
+ {
+ 
+ void PAHcurlApplyCurl2D(const int c_dofs1D,
+@@ -225,11 +225,12 @@ void PAHdivApplyCurlTranspose2D(const int c_dofs1D,
+ }
+ 
+ }
++using namespace win_internal_bilininteg_interp_pa_0;
+ 
+ // Apply to x corresponding to DOFs in H^1 (domain) the (topological) gradient
+ // to get a dof in H(curl) (range). You can think of the range as the "test" space
+ // and the domain as the "trial" space, but there's no integration.
+-static void PAHcurlApplyGradient2D(const int c_dofs1D,
++void PAHcurlApplyGradient2D(const int c_dofs1D,
+                                    const int o_dofs1D,
+                                    const int NE,
+                                    const Array<real_t> &B_,
+@@ -308,7 +309,7 @@ static void PAHcurlApplyGradient2D(const int c_dofs1D,
+ }
+ 
+ // Specialization of PAHcurlApplyGradient2D to the case where B is identity
+-static void PAHcurlApplyGradient2DBId(const int c_dofs1D,
++void PAHcurlApplyGradient2DBId(const int c_dofs1D,
+                                       const int o_dofs1D,
+                                       const int NE,
+                                       const Array<real_t> &G_,
+@@ -378,7 +379,7 @@ static void PAHcurlApplyGradient2DBId(const int c_dofs1D,
+    });
+ }
+ 
+-static void PAHcurlApplyGradientTranspose2D(
++void PAHcurlApplyGradientTranspose2D(
+    const int c_dofs1D, const int o_dofs1D, const int NE,
+    const Array<real_t> &B_, const Array<real_t> &G_,
+    const Vector &x_, Vector &y_)
+@@ -455,7 +456,7 @@ static void PAHcurlApplyGradientTranspose2D(
+ 
+ // Specialization of PAHcurlApplyGradientTranspose2D to the case where
+ // B is identity
+-static void PAHcurlApplyGradientTranspose2DBId(
++void PAHcurlApplyGradientTranspose2DBId(
+    const int c_dofs1D, const int o_dofs1D, const int NE,
+    const Array<real_t> &G_,
+    const Vector &x_, Vector &y_)
+@@ -523,7 +524,7 @@ static void PAHcurlApplyGradientTranspose2DBId(
+    });
+ }
+ 
+-static void PAHcurlApplyGradient3D(const int c_dofs1D,
++void PAHcurlApplyGradient3D(const int c_dofs1D,
+                                    const int o_dofs1D,
+                                    const int NE,
+                                    const Array<real_t> &B_,
+@@ -713,7 +714,7 @@ static void PAHcurlApplyGradient3D(const int c_dofs1D,
+ }
+ 
+ // Specialization of PAHcurlApplyGradient3D to the case where B is identity
+-static void PAHcurlApplyGradient3DBId(const int c_dofs1D,
++void PAHcurlApplyGradient3DBId(const int c_dofs1D,
+                                       const int o_dofs1D,
+                                       const int NE,
+                                       const Array<real_t> &G_,
+@@ -883,7 +884,7 @@ static void PAHcurlApplyGradient3DBId(const int c_dofs1D,
+    });
+ }
+ 
+-static void PAHcurlApplyGradientTranspose3D(
++void PAHcurlApplyGradientTranspose3D(
+    const int c_dofs1D, const int o_dofs1D, const int NE,
+    const Array<real_t> &B_, const Array<real_t> &G_,
+    const Vector &x_, Vector &y_)
+@@ -1070,7 +1071,7 @@ static void PAHcurlApplyGradientTranspose3D(
+ 
+ // Specialization of PAHcurlApplyGradientTranspose3D to the case where
+ // B is identity
+-static void PAHcurlApplyGradientTranspose3DBId(
++void PAHcurlApplyGradientTranspose3DBId(
+    const int c_dofs1D, const int o_dofs1D, const int NE,
+    const Array<real_t> &G_,
+    const Vector &x_, Vector &y_)
+@@ -1354,7 +1355,7 @@ void GradientInterpolator::AddMultTransposePA(const Vector &x, Vector &y) const
+    }
+ }
+ 
+-static void PAHcurlVecH1IdentityApply2D(const int c_dofs1D,
++void PAHcurlVecH1IdentityApply2D(const int c_dofs1D,
+                                         const int o_dofs1D,
+                                         const int NE,
+                                         const Array<real_t> &Bclosed,
+@@ -1454,7 +1455,7 @@ static void PAHcurlVecH1IdentityApply2D(const int c_dofs1D,
+    });
+ }
+ 
+-static void PAHcurlVecH1IdentityApplyTranspose2D(const int c_dofs1D,
++void PAHcurlVecH1IdentityApplyTranspose2D(const int c_dofs1D,
+                                                  const int o_dofs1D,
+                                                  const int NE,
+                                                  const Array<real_t> &Bclosed,
+@@ -1563,7 +1564,7 @@ static void PAHcurlVecH1IdentityApplyTranspose2D(const int c_dofs1D,
+    });
+ }
+ 
+-static void PAHcurlVecH1IdentityApply3D(const int c_dofs1D,
++void PAHcurlVecH1IdentityApply3D(const int c_dofs1D,
+                                         const int o_dofs1D,
+                                         const int NE,
+                                         const Array<real_t> &Bclosed,
+@@ -1777,7 +1778,7 @@ static void PAHcurlVecH1IdentityApply3D(const int c_dofs1D,
+    });
+ }
+ 
+-static void PAHcurlVecH1IdentityApplyTranspose3D(const int c_dofs1D,
++void PAHcurlVecH1IdentityApplyTranspose3D(const int c_dofs1D,
+                                                  const int o_dofs1D,
+                                                  const int NE,
+                                                  const Array<real_t> &Bclosed,
+diff --git a/fem/integ/bilininteg_mixedcurl_pa.cpp b/fem/integ/bilininteg_mixedcurl_pa.cpp
+index 6841413..7ee37d2 100644
+--- a/fem/integ/bilininteg_mixedcurl_pa.cpp
++++ b/fem/integ/bilininteg_mixedcurl_pa.cpp
+@@ -19,7 +19,7 @@
+ namespace mfem
+ {
+ 
+-namespace
++namespace win_internal_bilininteg_mixedcurl_pa_0
+ {
+ 
+ class Rotated2DVectorCoefficient : public VectorCoefficient
+@@ -926,7 +926,8 @@ void PAHcurlDotApplyTranspose3D(const int d1d,
+    });
+ }
+ 
+-} // namespace
++}
++using namespace win_internal_bilininteg_mixedcurl_pa_0; // namespace
+ 
+ void MixedDotProductIntegrator::AssemblePA(const FiniteElementSpace &trial_fes,
+                                            const FiniteElementSpace &test_fes)
+diff --git a/fem/integ/bilininteg_mixedvecgrad_pa.cpp b/fem/integ/bilininteg_mixedvecgrad_pa.cpp
+index fe92f70..475696d 100644
+--- a/fem/integ/bilininteg_mixedvecgrad_pa.cpp
++++ b/fem/integ/bilininteg_mixedvecgrad_pa.cpp
+@@ -25,7 +25,7 @@ namespace internal
+ // The stored operator represents (w/detJ) * J^T * Q * adj(J)^T, where Q is the
+ // (optional) coefficient in physical space and adj(J) is the adjugate of the
+ // physical Jacobian.
+-static void PAMixedVectorGradientSetupHdiv2D(const int Q1D,
++void PAMixedVectorGradientSetupHdiv2D(const int Q1D,
+                                              const int coeffDim,
+                                              const int NE,
+                                              const Array<real_t> &w,
+@@ -107,7 +107,7 @@ static void PAMixedVectorGradientSetupHdiv2D(const int Q1D,
+    });
+ }
+ 
+-static void PAMixedVectorGradientSetupHdiv3D(const int Q1D,
++void PAMixedVectorGradientSetupHdiv3D(const int Q1D,
+                                              const int coeffDim,
+                                              const int NE,
+                                              const Array<real_t> &w,
+@@ -235,7 +235,7 @@ static void PAMixedVectorGradientSetupHdiv3D(const int Q1D,
+ 
+ // Apply to x corresponding to DOFs in H^1 (trial), whose gradients are
+ // integrated against H(curl) test functions corresponding to y.
+-static void PAHcurlH1Apply2D(const int D1D,
++void PAHcurlH1Apply2D(const int D1D,
+                              const int Q1D,
+                              const int NE,
+                              const Array<real_t> &bc,
+@@ -378,7 +378,7 @@ static void PAHcurlH1Apply2D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H(curl), integrated
+ // against gradients of H^1 functions corresponding to y.
+-static void PAHcurlH1ApplyTranspose2D(const int D1D,
++void PAHcurlH1ApplyTranspose2D(const int D1D,
+                                       const int Q1D,
+                                       const int NE,
+                                       const Array<real_t> &bc,
+@@ -522,7 +522,7 @@ static void PAHcurlH1ApplyTranspose2D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H^1 (trial), whose gradients are
+ // integrated against H(div) test functions corresponding to y.
+-static void PAHdivH1Apply2D(const int D1D,
++void PAHdivH1Apply2D(const int D1D,
+                             const int Q1D,
+                             const int NE,
+                             const Array<real_t> &bc,
+@@ -653,7 +653,7 @@ static void PAHdivH1Apply2D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H(div), integrated
+ // against gradients of H^1 functions corresponding to y.
+-static void PAHdivH1ApplyTranspose2D(const int D1D,
++void PAHdivH1ApplyTranspose2D(const int D1D,
+                                      const int Q1D,
+                                      const int NE,
+                                      const Array<real_t> &bc,
+@@ -788,7 +788,7 @@ static void PAHdivH1ApplyTranspose2D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H^1 (trial), whose gradients are
+ // integrated against H(curl) test functions corresponding to y.
+-static void PAHcurlH1Apply3D(const int D1D,
++void PAHcurlH1Apply3D(const int D1D,
+                              const int Q1D,
+                              const int NE,
+                              const Array<real_t> &bc,
+@@ -1000,7 +1000,7 @@ static void PAHcurlH1Apply3D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H(curl), integrated
+ // against gradients of H^1 functions corresponding to y.
+-static void PAHcurlH1ApplyTranspose3D(const int D1D,
++void PAHcurlH1ApplyTranspose3D(const int D1D,
+                                       const int Q1D,
+                                       const int NE,
+                                       const Array<real_t> &bc,
+@@ -1221,7 +1221,7 @@ static void PAHcurlH1ApplyTranspose3D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H^1 (trial), whose gradients are
+ // integrated against H(div) test functions corresponding to y.
+-static void PAHdivH1Apply3D(const int D1D,
++void PAHdivH1Apply3D(const int D1D,
+                             const int Q1D,
+                             const int NE,
+                             const Array<real_t> &bc,
+@@ -1423,7 +1423,7 @@ static void PAHdivH1Apply3D(const int D1D,
+ 
+ // Apply to x corresponding to DOFs in H(div), integrated
+ // against gradients of H^1 functions corresponding to y.
+-static void PAHdivH1ApplyTranspose3D(const int D1D,
++void PAHdivH1ApplyTranspose3D(const int D1D,
+                                      const int Q1D,
+                                      const int NE,
+                                      const Array<real_t> &bc,
+diff --git a/fem/integ/bilininteg_vecdiffusion_pa.cpp b/fem/integ/bilininteg_vecdiffusion_pa.cpp
+index fffb3dd..73b23bd 100644
+--- a/fem/integ/bilininteg_vecdiffusion_pa.cpp
++++ b/fem/integ/bilininteg_vecdiffusion_pa.cpp
+@@ -326,7 +326,7 @@ void VectorDiffusionIntegrator::AddMultPA(const Vector &x, Vector &y) const
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void PAVectorDiffusionDiagonal2D(const int NE,
++void PAVectorDiffusionDiagonal2D(const int NE,
+                                         const Array<real_t> &b,
+                                         const Array<real_t> &g,
+                                         const Vector &d,
+@@ -396,7 +396,7 @@ static void PAVectorDiffusionDiagonal2D(const int NE,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void PAVectorDiffusionDiagonal3D(const int NE,
++void PAVectorDiffusionDiagonal3D(const int NE,
+                                         const Array<real_t> &b,
+                                         const Array<real_t> &g,
+                                         const Vector &d,
+diff --git a/fem/integ/bilininteg_vecdiv_pa.cpp b/fem/integ/bilininteg_vecdiv_pa.cpp
+index 7b8a88c..6f7e612 100644
+--- a/fem/integ/bilininteg_vecdiv_pa.cpp
++++ b/fem/integ/bilininteg_vecdiv_pa.cpp
+@@ -17,7 +17,7 @@ namespace mfem
+ {
+ 
+ // PA Divergence Assemble 2D kernel
+-static void PADivergenceSetup2D(const int Q1D,
++void PADivergenceSetup2D(const int Q1D,
+                                 const int NE,
+                                 const Array<real_t> &w,
+                                 const Vector &j,
+@@ -49,7 +49,7 @@ static void PADivergenceSetup2D(const int Q1D,
+ }
+ 
+ // PA Divergence Assemble 3D kernel
+-static void PADivergenceSetup3D(const int Q1D,
++void PADivergenceSetup3D(const int Q1D,
+                                 const int NE,
+                                 const Array<real_t> &w,
+                                 const Vector &j,
+diff --git a/fem/integ/lininteg_boundary.cpp b/fem/integ/lininteg_boundary.cpp
+index ae72dbc..3e2631a 100644
+--- a/fem/integ/lininteg_boundary.cpp
++++ b/fem/integ/lininteg_boundary.cpp
+@@ -17,7 +17,7 @@ namespace mfem
+ {
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void BLFEvalAssemble2D(const int vdim, const int nbe, const int d,
++void BLFEvalAssemble2D(const int vdim, const int nbe, const int d,
+                               const int q,
+                               const bool normals, const int *markers, const real_t *b,
+                               const real_t *detj, const real_t *n, const real_t *weights,
+@@ -71,7 +71,7 @@ static void BLFEvalAssemble2D(const int vdim, const int nbe, const int d,
+ }
+ 
+ template<int T_D1D = 0, int T_Q1D = 0>
+-static void BLFEvalAssemble3D(const int vdim, const int nbe, const int d,
++void BLFEvalAssemble3D(const int vdim, const int nbe, const int d,
+                               const int q,
+                               const bool normals, const int *markers, const real_t *b,
+                               const real_t *detj, const real_t *n, const real_t *weights,
+diff --git a/fem/integ/lininteg_boundary_flux.cpp b/fem/integ/lininteg_boundary_flux.cpp
+index 0ee3afb..544bcc4 100644
+--- a/fem/integ/lininteg_boundary_flux.cpp
++++ b/fem/integ/lininteg_boundary_flux.cpp
+@@ -16,7 +16,7 @@
+ namespace mfem
+ {
+ 
+-template<int T_D1D = 0, int T_Q1D = 0> static
++template<int T_D1D = 0, int T_Q1D = 0>
+ void BFLFEvalAssemble2D(const int nbe, const int d, const int q,
+                         const int *markers, const real_t *b,
+                         const real_t *weights, const Vector &coeff, real_t *y)
+@@ -50,7 +50,7 @@ void BFLFEvalAssemble2D(const int nbe, const int d, const int q,
+    });
+ }
+ 
+-template<int T_D1D = 0, int T_Q1D = 0> static
++template<int T_D1D = 0, int T_Q1D = 0>
+ void BFLFEvalAssemble3D(const int nbe, const int d, const int q,
+                         const int *markers, const real_t *b,
+                         const real_t *weights, const Vector &coeff, real_t *y)
+diff --git a/fem/integ/lininteg_domain_grad.cpp b/fem/integ/lininteg_domain_grad.cpp
+index 62f3baa..dbaac9e 100644
+--- a/fem/integ/lininteg_domain_grad.cpp
++++ b/fem/integ/lininteg_domain_grad.cpp
+@@ -16,7 +16,7 @@
+ namespace mfem
+ {
+ 
+-template<int T_D1D = 0, int T_Q1D = 0> static
++template<int T_D1D = 0, int T_Q1D = 0>
+ void DLFGradAssemble2D(const int vdim, const int ne, const int d, const int q,
+                        const int *markers, const real_t *b, const real_t *g,
+                        const real_t *jacobians,
+@@ -108,7 +108,7 @@ void DLFGradAssemble2D(const int vdim, const int ne, const int d, const int q,
+    });
+ }
+ 
+-template<int T_D1D = 0, int T_Q1D = 0> static
++template<int T_D1D = 0, int T_Q1D = 0>
+ void DLFGradAssemble3D(const int vdim, const int ne, const int d, const int q,
+                        const int *markers, const real_t *b, const real_t *g,
+                        const real_t *jacobians,
+diff --git a/fem/particleset.cpp b/fem/particleset.cpp
+index 84dbad7..6e57299 100644
+--- a/fem/particleset.cpp
++++ b/fem/particleset.cpp
+@@ -248,7 +248,7 @@ void ParticleSet::AddParticles(const Array<IDType> &new_ids,
+ /// \cond DO_NOT_DOCUMENT
+ // Static helper: gather selected particle-vector entries into a compact buffer.
+ // nvcc does not allow extended host/device lambdas in non-public members.
+-static void GatherParticleVectorDevice(const ParticleVector &pv,
++void GatherParticleVectorDevice(const ParticleVector &pv,
+                                        const Array<int> &send_idxs,
+                                        Vector &send_data,
+                                        int nsend)
+@@ -278,7 +278,7 @@ static void GatherParticleVectorDevice(const ParticleVector &pv,
+ 
+ // Static helper: gather selected tag values into a compact buffer.
+ // nvcc does not allow extended host/device lambdas in non-public members.
+-static void GatherParticleTagsDevice(const Array<int> &tag,
++void GatherParticleTagsDevice(const Array<int> &tag,
+                                      const Array<int> &send_idxs,
+                                      Array<int> &send_tag,
+                                      int nsend)
+@@ -297,7 +297,7 @@ static void GatherParticleTagsDevice(const Array<int> &tag,
+ 
+ // Static helper: scatter compact particle-vector entries to particle storage.
+ // nvcc does not allow extended host/device lambdas in non-public members.
+-static void ScatterParticleVectorDevice(ParticleVector &pv,
++void ScatterParticleVectorDevice(ParticleVector &pv,
+                                         const Vector &recv_data,
+                                         const Array<int> &recv_locs,
+                                         int nrecv)
+@@ -326,7 +326,7 @@ static void ScatterParticleVectorDevice(ParticleVector &pv,
+ 
+ // Static helper: scatter compact tag values to particle storage.
+ // nvcc does not allow extended host/device lambdas in non-public members.
+-static void ScatterParticleTagsDevice(Array<int> &tag,
++void ScatterParticleTagsDevice(Array<int> &tag,
+                                       const Array<int> &recv_tag,
+                                       const Array<int> &recv_locs,
+                                       int nrecv)
+diff --git a/fem/pderefmat_op.cpp b/fem/pderefmat_op.cpp
+index 51f8150..bf539a0 100644
+--- a/fem/pderefmat_op.cpp
++++ b/fem/pderefmat_op.cpp
+@@ -20,7 +20,7 @@ namespace mfem
+ namespace internal
+ {
+ template <Ordering::Type Order, bool Atomic>
+-static void ParDerefMultKernelImpl(const ParDerefineMatrixOp &op,
++void ParDerefMultKernelImpl(const ParDerefineMatrixOp &op,
+                                    const Vector &x, Vector &y)
+ {
+    // pack sends
+diff --git a/fem/qspace.cpp b/fem/qspace.cpp
+index f191049..42dd5f9 100644
+--- a/fem/qspace.cpp
++++ b/fem/qspace.cpp
+@@ -60,7 +60,7 @@ const Array<int> &QuadratureSpaceBase::Offsets(
+    }
+ }
+ 
+-namespace
++namespace win_internal_qspace_0
+ {
+ 
+ void ScaleByQuadratureWeights(Vector &weights, const IntegrationRule &ir)
+@@ -76,7 +76,8 @@ void ScaleByQuadratureWeights(Vector &weights, const IntegrationRule &ir)
+    });
+ }
+ 
+-} // anonymous namespace
++}
++using namespace win_internal_qspace_0; // anonymous namespace
+ 
+ void QuadratureSpaceBase::ConstructWeights() const
+ {
+diff --git a/fem/restriction.cpp b/fem/restriction.cpp
+index 1a406f4..e5d33ee 100644
+--- a/fem/restriction.cpp
++++ b/fem/restriction.cpp
+@@ -685,7 +685,7 @@ void ConformingFaceRestriction::MultInternal(const Vector& x, Vector& y,
+    });
+ }
+ 
+-static void ConformingFaceRestriction_AddMultTranspose(
++void ConformingFaceRestriction_AddMultTranspose(
+    const int ndofs,
+    const int face_dofs,
+    const int nf,
+diff --git a/fem/tmop.cpp b/fem/tmop.cpp
+index 1b79bd4..4b7deba 100644
+--- a/fem/tmop.cpp
++++ b/fem/tmop.cpp
+@@ -2682,7 +2682,7 @@ namespace internal
+ // mfem::forall-based copy kernel -- used by protected methods below.
+ // Needed as a workaround for the nvcc restriction that methods with mfem::forall
+ // in them must to be public.
+-static inline void device_copy(real_t *d_dest, const real_t *d_src, int size)
++inline void device_copy(real_t *d_dest, const real_t *d_src, int size)
+ {
+    mfem::forall(size, [=] MFEM_HOST_DEVICE (int i) { d_dest[i] = d_src[i]; });
+ }
+diff --git a/general/communication.cpp b/general/communication.cpp
+index 0c30836..84b274d 100644
+--- a/general/communication.cpp
++++ b/general/communication.cpp
+@@ -1759,7 +1759,7 @@ namespace internal
+ /** @brief Extract a sub-array: xout[i] = xin[indices[i]].
+     Note that the 'indices' can contain repeated integers. */
+ template <typename T>
+-static void ExtractSubArray(const Array<int> &indices,
++void ExtractSubArray(const Array<int> &indices,
+                             const Array<T> &xin,
+                             Array<T> &xout)
+ {
+@@ -1777,7 +1777,7 @@ static void ExtractSubArray(const Array<int> &indices,
+     Note that the 'indices' can NOT contain repeated integers because that will
+     create a race condition during parallel execution. */
+ template <typename T>
+-static void SetSubArray(const Array<int> &indices,
++void SetSubArray(const Array<int> &indices,
+                         const Array<T> &xin,
+                         Array<T> &xout)
+ {
+@@ -1797,7 +1797,7 @@ static void SetSubArray(const Array<int> &indices,
+     is assigned to all given entries, there no real race condition during
+     parallel execution. */
+ template <typename T>
+-static void SetSubArray(const Array<int> &indices, Array<T> &xout, T val)
++void SetSubArray(const Array<int> &indices, Array<T> &xout, T val)
+ {
+    // Use ReadWrite() since we modify only a subset of the indices:
+    auto y = xout.ReadWrite();
+@@ -1814,7 +1814,7 @@ static void SetSubArray(const Array<int> &indices, Array<T> &xout, T val)
+     - unique_to_src_offsets and unique_to_src_indices are the I and J arrays of
+       the csr format of A restricted to its nonzero rows. */
+ template <typename T>
+-static void BooleanAddMult(const Array<int> &unique_dst_indices,
++void BooleanAddMult(const Array<int> &unique_dst_indices,
+                            const Array<int> &unique_to_src_offsets,
+                            const Array<int> &unique_to_src_indices,
+                            const Array<T> &src,
+@@ -1843,7 +1843,7 @@ static void BooleanAddMult(const Array<int> &unique_dst_indices,
+     - unique_to_src_offsets and unique_to_src_indices are the I and J arrays of
+       the csr format of A restricted to its nonzero rows. */
+ template <typename T>
+-static void BooleanReduceApply(const Array<int> &unique_dst_indices,
++void BooleanReduceApply(const Array<int> &unique_dst_indices,
+                                const Array<int> &unique_to_src_offsets,
+                                const Array<int> &unique_to_src_indices,
+                                const Array<T> &src,
+diff --git a/general/reducers.hpp b/general/reducers.hpp
+index a980a7b..888896f 100644
+--- a/general/reducers.hpp
++++ b/general/reducers.hpp
+@@ -468,9 +468,8 @@ template<class B, class R> struct reduction_kernel
+    {
+ #if defined(__GNUC__) || defined(__clang__)
+       return N ? (sizeof(unsigned) * 8 - __builtin_clz(N)) : 0;
+-#elif defined(_MSC_VER)
+-      return sizeof(unsigned) * 8 - __lzclz(N);
+ #else
++      // (MSVC: __lzclz does not exist; the portable loop is used)
+       int res = 0;
+       while (N)
+       {
+diff --git a/linalg/hypre.cpp b/linalg/hypre.cpp
+index e2cfd7a..1721e26 100644
+--- a/linalg/hypre.cpp
++++ b/linalg/hypre.cpp
+@@ -774,7 +774,7 @@ signed char HypreParMatrix::CopyBoolCSR(Table *bool_csr,
+ // Copy the j array of a MemoryIJData object to the given dst_J array,
+ // converting the indices from HYPRE_Int to int.
+ #ifdef HYPRE_BIGINT
+-static void CopyCSR_J(const int nnz, const MemoryIJData &mem_csr,
++void CopyCSR_J(const int nnz, const MemoryIJData &mem_csr,
+                       Memory<int> &dst_J)
+ {
+    // Perform the copy using the configured mfem Device
+diff --git a/linalg/kernels.hpp b/linalg/kernels.hpp
+index 2083d00..2f0b4c5 100644
+--- a/linalg/kernels.hpp
++++ b/linalg/kernels.hpp
+@@ -563,7 +563,7 @@ void Swap(T &a, T &b)
+    b = tmp;
+ }
+ 
+-const real_t Epsilon = std::numeric_limits<real_t>::epsilon();
++constexpr real_t Epsilon = std::numeric_limits<real_t>::epsilon();   // constexpr: usable in device code with MSVC
+ 
+ /// Utility function used in CalcSingularvalue<3>.
+ MFEM_HOST_DEVICE static inline
+diff --git a/linalg/sparsemat.cpp b/linalg/sparsemat.cpp
+index 8adecef..0b59eac 100644
+--- a/linalg/sparsemat.cpp
++++ b/linalg/sparsemat.cpp
+@@ -2717,7 +2717,7 @@ void SparseMatrix::DiagScale(const Vector &b, Vector &x,
+ }
+ 
+ template <bool useFabs>
+-static void JacobiDispatch(const Vector &b, const Vector &x0, Vector &x1,
++void JacobiDispatch(const Vector &b, const Vector &x0, Vector &x1,
+                            const Memory<int> &I, const Memory<int> &J,
+                            const Memory<real_t> &A, const int height,
+                            const real_t sc)

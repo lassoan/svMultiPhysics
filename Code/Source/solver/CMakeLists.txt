@@ -255,6 +255,7 @@ set(CSRCS
   distribute.h distribute.cpp
   eq_assem.h eq_assem.cpp
   fsi.h fsi.cpp
+  svmfem_host.h svmfem_host.cpp
   fs.h fs.cpp
   initialize.h initialize.cpp
   Integrator.h Integrator.cpp
@@ -386,6 +387,19 @@ target_link_libraries(${SV_MULTIPHYSICS_EXE}
 # extra MPI libraries only if there are not set to NOT_FOUND or other null
 if(SV_MPI_EXTRA_LIBRARY)
   target_link_libraries(${SV_MULTIPHYSICS_EXE} ${SV_MPI_EXTRA_LIBRARY})
+endif()
+
+# Experimental GPU acceleration with MFEM (Code/Source/mfem, built separately
+# with nvcc and MSVC; MFEM built with MFEM_USE_CUDA)
+set(SV_MFEM_DIR "" CACHE PATH "Build directory of the svmfem library (GPU assembly and NS solver with MFEM)")
+if(SV_MFEM_DIR)
+  target_compile_definitions(${SV_MULTIPHYSICS_EXE} PRIVATE SV_USE_MFEM)
+  target_include_directories(${SV_MULTIPHYSICS_EXE} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../mfem)
+  target_link_libraries(${SV_MULTIPHYSICS_EXE} ${SV_MFEM_DIR}/svmfem.lib)
+  if(WIN32)
+    add_custom_command(TARGET ${SV_MULTIPHYSICS_EXE} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SV_MFEM_DIR}/svmfem.dll" $<TARGET_FILE_DIR:${SV_MULTIPHYSICS_EXE}>)
+  endif()
 endif()
 
 if(USE_TRILINOS)

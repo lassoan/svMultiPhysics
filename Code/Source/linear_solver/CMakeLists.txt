@@ -51,6 +51,12 @@ add_library(${lib} ${SV_LIBRARY_TYPE} ${CSRCS})
 target_include_directories(${lib} PRIVATE ${SV_SOURCE_DIR}/ThirdParty/eigen/include/eigen3)
 
 target_link_libraries(${lib} ${MPI_LIBRARY} ${MPI_Fortran_LIBRARIES})
+
+# Experimental GPU acceleration with MFEM (Code/Source/mfem, built separately with nvcc)
+set(SV_MFEM_DIR "" CACHE PATH "Build directory of the svmfem library (GPU assembly and NS solver with MFEM)")
+if(SV_MFEM_DIR)
+  target_compile_definitions(${lib} PRIVATE SV_USE_MFEM)
+endif()
 #target_link_libraries(${lib} ${MPI_LIBRARY} ${MPI_Fortran_LIBRARIES} ${VTK_LIBRARIES})
 
 # extra MPI libraries only if there are not set to NOT_FOUND or other null 

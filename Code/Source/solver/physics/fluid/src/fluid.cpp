@@ -6,6 +6,9 @@
 #include "all_fun.h"
 #include "consts.h"
 #include "fs.h"
+#ifdef SV_USE_MFEM
+#include "svmfem_host.h"
+#endif
 #include "lhsa.h"
 #include "nn.h"
 #include "utils.h"
@@ -481,6 +484,10 @@ void construct_fluid(ComMod& com_mod, const mshType& lM, const SolutionStates& s
 {
   const auto& Ag = solutions.intermediate.get_acceleration();
   const auto& Yg = solutions.intermediate.get_velocity();
+#ifdef SV_USE_MFEM
+  // Experimental GPU assembly
+  if (svmfem_host::construct_fluid(com_mod, lM, Ag, Yg)) return;
+#endif
   #define n_debug_construct_fluid
   #ifdef debug_construct_fluid
   DebugMsg dmsg(__func__, com_mod.cm.idcm());

@@ -21,6 +21,9 @@
 #include "ls.h"
 #include "output.h"
 #include "read_files.h"
+#ifdef SV_USE_MFEM
+#include "svmfem_host.h"
+#endif
 #include "read_msh.h"
 #include "remesh.h"
 #include "set_bc.h"
@@ -679,6 +682,10 @@ int main(int argc, char *argv[])
       finalize_linear_algebra(eq);
     }
 
+#ifdef SV_USE_MFEM
+  // Release the device objects before the CUDA runtime shuts down
+  svmfem_host::finalize();
+#endif
   MPI_Finalize();
   return 0;
 
